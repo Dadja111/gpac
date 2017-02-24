@@ -259,10 +259,14 @@ this gets the maximum value (further in the past) of all representations playing
 Double gf_dash_get_timeshift_buffer_pos(GF_DashClient *dash);
 
 /*sets codec statistics for playback rate adjustment*/
-void gf_dash_set_codec_stat(GF_DashClient *dash, u32 idx, u32 avg_dec_time, u32 max_dec_time, u32 irap_avg_dec_time, u32 irap_max_dec_time, Bool codec_reset, Bool decode_only_rap);
+void gf_dash_group_set_codec_stat(GF_DashClient *dash, u32 idx, u32 avg_dec_time, u32 max_dec_time, u32 irap_avg_dec_time, u32 irap_max_dec_time, Bool codec_reset, Bool decode_only_rap);
 
 /*sets buffer levels*/
-void gf_dash_set_buffer_levels(GF_DashClient *dash, u32 idx, u32 buffer_min_ms, u32 buffer_max_ms, u32 buffer_occupancy_ms);
+void gf_dash_group_set_buffer_levels(GF_DashClient *dash, u32 idx, u32 buffer_min_ms, u32 buffer_max_ms, u32 buffer_occupancy_ms);
+
+/*indicates the buffer time in ms after which the player resumes playback. This value is less or equal to the buffer_max_ms 
+indicated in gf_dash_group_set_buffer_levels */
+GF_Err gf_dash_group_set_max_buffer_playout(GF_DashClient *dash, u32 idx, u32 max_target_buffer_ms);
 
 typedef enum
 {
@@ -316,8 +320,10 @@ void gf_dash_set_group_done(GF_DashClient *dash, u32 idx, Bool done);
 /*gets presentationTimeOffset and timescale for the active representation*/
 GF_Err gf_dash_group_get_presentation_time_offset(GF_DashClient *dash, u32 idx, u64 *presentation_time_offset, u32 *timescale);
 
-/*returns 1 if the playback position is in the last period of the presentation*/
-Bool gf_dash_in_last_period(GF_DashClient *dash);
+/*returns 1 if the playback position is in the last period of the presentation
+if check_eos is set, return one only if the last period is known to be the last one (eg not an open period in live)
+*/
+Bool gf_dash_in_last_period(GF_DashClient *dash, Bool check_eos);
 /*return value:
 	1 if the period switching has been requested (due to seeking),
 	2 if the switching is in progress (all groups will soon be destroyed and plyback will be stopped and restarted)
@@ -491,6 +497,15 @@ GF_Err gf_dash_group_set_visible_rect(GF_DashClient *dash, u32 idx, u32 min_x, u
 /*Enables or disables threaded downloads of media files for the dash client
  @use_threads: if true, threads are used to download files*/
 void gf_dash_set_threaded_download(GF_DashClient *dash, Bool use_threads);
+
+typedef enum {
+	GF_DASH_ALGO_NONE = 0,
+	GF_DASH_ALGO_GPAC_LEGACY_RATE = 1,
+	GF_DASH_ALGO_GPAC_LEGACY_BUFFER = 2,
+
+	GF_DASH_ALGO_GPAC_TEST = 20,
+} GF_DASHAdaptationAlgorithm;
+void gf_dash_set_algo(GF_DashClient *dash, GF_DASHAdaptationAlgorithm algo);
 
 #endif //GPAC_DISABLE_DASH_CLIENT
 

@@ -2,30 +2,40 @@
 
 #for user doc, check scripts/00-template
 
-
 base_args=""
 
-GNU_TIME=time
+GNU_TIME=/usr/bin/time
 GNU_DATE=date
+GNU_TIMEOUT=timeout
 #GNU_SED=sed
 DIFF=diff
 GCOV=gcov
 FFMPEG=ffmpeg
+READLINK=readlink
 
 EXTERNAL_MEDIA_AVAILABLE=1
 
 platform=`uname -s`
-main_dir=`pwd`
-# May be needed in some particular mingw cases
-#case $platform in MINGW*) 
-#  main_dir=`pwd -W | sed 's|/|\\\\|g'`
-#  echo $main_dir
-#esac
+
 
 if [ $platform = "Darwin" ] ; then
 GNU_TIME=gtime
 GNU_DATE=gdate
+GNU_TIMEOUT=gtimeout
+READLINK=greadlink
 fi
+
+
+#if the script in launched from elsewhere, main_dir still needs to be the script directory
+main_dir="$(dirname $($READLINK -f $0))"
+cd $main_dir
+
+#if launched from an absolute path, set all paths as absolute (will break on cygwin)
+rel_main_dir="."
+if [[ "$0" = /* ]]; then
+  rel_main_dir=$main_dir
+fi
+
 
 MP4CLIENT_NOT_FOUND=0
 
@@ -34,29 +44,35 @@ play_all=0
 global_test_ui=0
 log_after_fail=0
 verbose=0
+enable_timeout=0
+enable_fuzzing=0
+fuzz_all=0
+fuzz_duration=60
+no_fuzz_cleanup=0
 
 current_script=""
 
 DEF_DUMP_DUR=10
 DEF_DUMP_SIZE="200x200"
+DEF_TIMEOUT=20
 
 #remote location of resource files: all media files, hash files and generated videos
 REFERENCE_DIR="http://download.tsi.telecom-paristech.fr/gpac/gpac_test_suite/resources"
 #dir where all external media are stored
-EXTERNAL_MEDIA_DIR="$main_dir/external_media"
+EXTERNAL_MEDIA_DIR="$rel_main_dir/external_media"
 #dir where all hashes are stored
-HASH_DIR="$main_dir/hash_refs"
+HASH_DIR="$rel_main_dir/hash_refs"
 #dir where all specific test rules (override of defaults, positive tests, ...) are stored
-RULES_DIR="$main_dir/rules"
+RULES_DIR="$rel_main_dir/rules"
 #dir where all referenced videos are stored
-SCRIPTS_DIR="$main_dir/scripts"
+SCRIPTS_DIR="$rel_main_dir/scripts"
 #dir where all referenced videos are stored
-VIDEO_DIR_REF="$main_dir/external_videos_refs"
+VIDEO_DIR_REF="$rel_main_dir/external_videos_refs"
 
 #dir where all local media data (ie from git repo) is stored
-MEDIA_DIR="$main_dir/media"
+MEDIA_DIR="$rel_main_dir/media"
 #local dir where all data will be generated (except hashes and referenced videos)
-LOCAL_OUT_DIR="$main_dir/results"
+LOCAL_OUT_DIR="$rel_main_dir/results"
 
 #dir where all test videos are generated
 VIDEO_DIR="$LOCAL_OUT_DIR/videos"
@@ -138,7 +154,13 @@ echo "  -clean-hash [ARG]:     removes all generated hash, logs, stat cache and 
 echo "  -hash:                 regenerate tests with missing hash files."
 echo "  -uirec:                generates UI event traces."
 echo "  -uiplay:               replays all recorded UI event traces."
-echo "  -speed N:              sets playback speed for -uiplay. Default is 1."
+echo "  -speed=N:              sets playback speed for -uiplay. Default is 1."
+echo ""
+echo "*** Fuzzing options"
+echo "  -do-fuzz:              runs test using afl-fuzz (gpac has to be compiled with afl-gcc first)."
+echo "  -fuzzdur=D:            runs fuzz tests for D (default is $fuzz_duration seconds). D is passed as is to timout program."
+echo "  -fuzzall:              fuzz all tests."
+echo "  -keepfuzz:             keeps all fuzzing data."
 echo ""
 echo "*** General options"
 echo "  -strict:               stops at the first failed test"
@@ -150,6 +172,7 @@ echo "  -sync-refs:            syncs all remote reference videos with local base
 echo "  -sync-before:          syncs all remote resources with local base (warning this can be long) before running the tests"
 echo "  -check:                check test suites (names of each test is unique)"
 echo "  -track-stack:          track stack in malloc and turns on -warn option"
+echo "  -noplay:               disables MP4Client tests"
 echo "  -test=NAME             only executes given test"
 echo "  -v:                    set verbose output"
 echo "  -h:                    print this help"
@@ -164,8 +187,8 @@ sync_media ()
   mkdir $EXTERNAL_MEDIA_DIR
  fi
  cd $EXTERNAL_MEDIA_DIR
- wget -m -nH --no-parent --cut-dirs=4 --reject *.gif "$REFERENCE_DIR/media/"
- cd $main_dir
+ wget -q -m -nH --no-parent --cut-dirs=4 --reject "*.gif" "$REFERENCE_DIR/media/"
+ cd "$main_dir"
 }
 
 #performs mirroring of media
@@ -173,8 +196,8 @@ sync_hash ()
 {
 log $L_INF "- Mirroring reference hashes from from $REFERENCE_DIR to $HASH_DIR"
 cd $HASH_DIR
-wget -m -nH --no-parent --cut-dirs=4 --reject *.gif "$REFERENCE_DIR/hashes/"
-cd $main_dir
+wget -q -m -nH --no-parent --cut-dirs=4 --reject "*.gif" "$REFERENCE_DIR/hash_refs/"
+cd "$main_dir"
 }
 
 #performs mirroring of media and references hash & videos
@@ -182,8 +205,8 @@ sync_refs ()
 {
 log $L_INF "- Mirroring reference videos from $REFERENCE_DIR to $VIDEO_DIR_REF"
 cd $VIDEO_DIR_REF
-wget -m -nH --no-parent --cut-dirs=4 --reject *.gif "$REFERENCE_DIR/video_refs/"
-cd $main_dir
+wget -q -m -nH --no-parent --cut-dirs=4 --reject "*.gif" "$REFERENCE_DIR/video_refs/"
+cd "$main_dir"
 }
 
 
@@ -222,6 +245,15 @@ for i in $* ; do
   disable_hash=1;;
  "-strict")
   strict_mode=1;;
+ "-do-fuzz")
+  enable_fuzzing=1;;
+ -fuzzdur*)
+  fuzz_duration="${i#-fuzzdur=}"
+  ;;
+ "-fuzzall")
+  fuzz_all=1;;
+ "-keepfuzz")
+  no_fuzz_cleanup=1;;
  "-sync-hash")
   sync_hash
   exit;;
@@ -238,6 +270,8 @@ for i in $* ; do
   log_after_fail=1;;
  "-track-stack")
   track_stack=1;;
+ "-noplay")
+	MP4CLIENT_NOT_FOUND=1;;
  -test*)
   single_test_name="${i#-test=}"
   ;;
@@ -306,7 +340,7 @@ log $L_INF "Checking test suite config"
 if [ $generate_hash = 0 ] ; then
  if [ ! "$(ls -A $HASH_DIR)" ]; then
   disable_hash=1
-  log $L_WAR "- Reference hashes unavailable - you may sync them using -sync-hash  - skippping hash tests"
+  log $L_WAR "- Reference hashes unavailable - you may sync them using -sync-hash  - skipping hash tests"
   else
   log $L_INF "- Reference hashes available - enabling hash tests"
  fi
@@ -325,7 +359,7 @@ else
 fi
 
 #test for GNU time
-res=`$GNU_TIME ls 2> /dev/null`
+$GNU_TIME ls > /dev/null 2>&1
 res=$?
 if [ $res != 0 ] ; then
 log $L_ERR "GNU time not found (ret $res) - exiting"
@@ -333,19 +367,37 @@ exit 1
 fi
 
 #test for GNU date
-res=`$GNU_DATE 2> /dev/null`
+$GNU_DATE > /dev/null 2>&1
 res=$?
 if [ $res != 0 ] ; then
 log $L_ERR "GNU date not found (ret $res) - exiting"
 exit 1
 fi
 
+#test for timeout
+$GNU_TIMEOUT 1.0 ls > /dev/null 2>&1
+res=$?
+if [ $res != 0 ] ; then
+ log $L_ERR "GNU timeout not found (ret $res) - some tests may hang forever ..."
+ enable_timeout=0
+ if [ $enable_fuzzing != 0 ] ; then
+  log $L_ERR "GNU timeout not found - disabling fuzzing"
+  enable_fuzzing=0
+ fi
+else
+enable_timeout=1
+fi
+
+
 #test for ffmpeg - if not present, disable video storing
 do_store_video=1
 
-`$FFMPEG -version > /dev/null 2>&1 `
+if [ $check_only = 0 ] ; then
+
+
+$FFMPEG -version > /dev/null 2>&1
 if [ $? != 0 ] ; then
-log $L_WAR "ffmpeg not found - disabling playback video storage"
+log $L_WAR "- FFMPEG not found - disabling playback video storage"
 do_store_video=0
 else
   if [ $generate_hash != 0 ] ; then
@@ -355,35 +407,42 @@ fi
 
 
 #check MP4Box, MP4Client and MP42TS (use default args, not custum ones because of -mem-track)
-`MP4Box -h 2> /dev/null`
-if [ $? != 0 ] ; then
-log $L_ERR "MP4Box not found (ret $?) - exiting"
+MP4Box -h 2> /dev/null
+res=$?
+if [ $res != 0 ] ; then
+log $L_ERR "MP4Box not found (ret $res) - exiting"
 exit 1
 fi
 
 MP4CLIENT="MP4Client"
 
-if [ $do_clean = 0 ] ; then
+if [ $MP4CLIENT_NOT_FOUND = 0 ] && [ $do_clean = 0 ] ; then
 
-`MP4Client -run-for 0 2> /dev/null`
+MP4Client -run-for 0 2> /dev/null
 res=$?
 if [ $res != 0 ] ; then
-echo ""
-log $L_WAR "WARNING: MP4Client not found (ret $res) - disabling all playback tests"
-echo ""
 MP4CLIENT_NOT_FOUND=1
-#elif [ $log_after_fail != 0 ] ; then
-#echo "** Dumping GPAC config file **"
-#cat $HOME/.gpac/GPAC.cfg
-#echo "** End of dump **"
+echo ""
+log $L_WAR "WARNING: MP4Client not found (ret $res) - launch results:"
+MP4Client -run-for 0
+res=$?
+if [ $res = 0 ] ; then
+log $L_INF "MP4Client returned $res on second run - enabling all playback tests"
+else
+echo "** MP4Client returned $res - disabling all playback tests - dumping GPAC config file **"
+cat $HOME/.gpac/GPAC.cfg
+echo "** End of dump **"
 fi
 
 fi
 
+fi
 
-`MP42TS -h 2> /dev/null`
-if [ $? != 0 ] ; then
-log $L_ERR "MP42TS not found (ret $?) - exiting"
+
+MP42TS -h 2> /dev/null
+res=$?
+if [ $res != 0 ] ; then
+log $L_ERR "MP42TS not found (ret $res) - exiting"
 exit 1
 fi
 
@@ -401,8 +460,34 @@ else
  fi
 fi
 
-echo ""
+#end check_only
+fi
 
+#check for afl-fuzz
+if [ $enable_fuzzing != 0 ] ; then
+ log $L_INF "Checking for afl-fuzz"
+ command -v afl-fuzz >/dev/null 2>&1
+ if [ $? != 0 ] ; then
+  log $L_WAR "afl-fuzz not found - disabling fuzzing"
+  enable_fuzzing=0
+ else
+  mkdir tmpafi
+  mkdir tmpafo
+
+  echo "void" > tmpafi/void.mp4
+  $GNU_TIMEOUT 3.0 afl-fuzz -d -i tmpafi -o tmpafo MP4Box -h > /dev/null
+  if [ $? != 0 ] ; then
+   log $L_WAR "afl-fuzz not properly configure:"
+   afl-fuzz -d -i tmpafi -o tmpafo MP4Box -h
+   exit
+  else
+   log $L_INF "afl-fuzz found and OK - enabling fuzzing with duration $fuzz_duration"
+  fi
+  rm -rf tmpaf*
+ fi
+fi
+
+echo ""
 
 #reassign our default programs
 MP4BOX="MP4Box -noprog -for-test $base_args"
@@ -440,10 +525,13 @@ test_begin ()
    log $L_ERR "	@test_begin takes only two arguments - wrong call (first arg is $1)"
   fi
 
-
+ test_skip=0
  result=""
  TEST_NAME=$1
+ fuzz_test=$fuzz_all
  reference_hash_valid="$HASH_DIR/$TEST_NAME-valid-hash"
+
+ log $L_DEB "Starting test $TEST_NAME"
 
 
  if [ $do_clean != 0 ] ; then
@@ -459,6 +547,7 @@ test_begin ()
  fi
 
  if [ $check_only != 0 ] ; then
+  test_ui=0
   report="$TEMP_DIR/$TEST_NAME.test"
   if [ -f $report ] ; then
    log $L_ERR "Test $TEST_NAME already exists - please fix ($current_script)"
@@ -477,7 +566,7 @@ test_begin ()
  #reset defaults
  dump_dur=$DEF_DUMP_DUR
  dump_size=$DEF_DUMP_SIZE
-
+ test_timeout=$DEF_TIMEOUT
 
  test_skip=0
  single_test=0
@@ -491,6 +580,13 @@ test_begin ()
 
  test_stats="$LOGS_DIR/$TEST_NAME-stats.sh"
 
+ #if error in strict mode, mark the test as skippable using value 2
+ if [ $strict_mode = 1 ] ; then
+  if [ -f $TEST_ERR_FILE ] ; then
+   test_skip=2
+  fi
+ fi
+
  if [ $generate_hash = 1 ] ; then
   #skip test only if reference hash is marked as valid
   if [ -f "$reference_hash_valid" ] ; then
@@ -499,7 +595,7 @@ test_begin ()
   fi
  elif [ $test_ui != 0 ] ; then
    test_skip=0
- else
+ elif [ $test_skip = 0 ] ; then
   #skip test only if final report is present (whether we generate hashes or not)
   if [ -f "$final_report" ] ; then
    if [ -f "$test_stats" ] ; then
@@ -511,20 +607,13 @@ test_begin ()
   fi
  fi
 
- #if error in strict mode, mark the test as skippable using value 2
- if [ $strict_mode = 1 ] ; then
-  if [ -f $TEST_ERR_FILE ] ; then
-   test_skip=2
-  fi
- fi
-
  if [ "$single_test_name" != "" ] && [ "$single_test_name" != "$TEST_NAME" ] ; then
    test_ui=0
    test_skip=1
  fi
 
  if [ $test_skip != 0 ] ; then
-   #stas.sh may be missing when generating hashes and that's not an error
+   #stats.sh may be missing when generating hashes and that's not an error
    if [ -f "$test_stats" ] ; then
     has_skip=`grep -w "TEST_SKIP" $test_stats`
 
@@ -590,6 +679,10 @@ test_end ()
   test_fail=1
  fi
 
+# makes glob on non existing files to expand to null
+# enabling loops on nonexisting* to be empty
+shopt -s nullglob
+
  #gather all stats per subtests
  for i in $TEMP_DIR/$TEST_NAME-stats-*.sh ; do
   reset_stat
@@ -618,7 +711,11 @@ test_end ()
    test_ok=0
    test_leak=$((test_leak + 1))
   elif [ $RETURN_VALUE != 0 ] ; then
-   result="$SUBTEST_NAME:UnknownFailure($RETURN_VALUE) $result"
+   if [ $enable_timeout != 0 ] && [ $RETURN_VALUE = 124 ] ; then
+    result="$SUBTEST_NAME:Timeout $result"
+   else
+    result="$SUBTEST_NAME:Fail(ret code $RETURN_VALUE) $result"
+   fi
    test_ok=0
    test_exec_na=$((test_exec_na + 1))
   fi
@@ -710,6 +807,55 @@ test_end ()
 
 }
 
+do_fuzz()
+{
+  cmd="$2"
+  fuzz="@@"
+  fuzz_cmd=${cmd/$1/$fuzz}
+  file_ext="${1##*.}"
+  orig_path=`pwd`
+  tests_gen=0
+  log $L_DEB "Fuzzing file $1 with command line $fuzz_cmd"
+
+  fuzz_res_dir="$LOCAL_OUT_DIR/fuzzing/$TEST_NAME_$SUBTEST_NAME/$fuzz_sub_idx"
+  fuzz_temp_dir="$LOCAL_OUT_DIR/fuzzing/$TEST_NAME_$SUBTEST_NAME/$fuzz_sub_idx/temp"
+  mkdir -p "$fuzz_res_dir"
+  mkdir -p "$fuzz_temp_dir/in/"
+  mkdir -p "$fuzz_temp_dir/out/"
+
+  cp $1 "$fuzz_temp_dir/in/"
+  cd $fuzz_temp_dir
+
+  $GNU_TIMEOUT $fuzz_duration afl-fuzz -d -i "in/" -o "out/" $fuzz_cmd
+  if [ $? = 0 ] ; then
+   if [ $no_fuzz_cleanup = 0 ] ; then
+    #rename all crashes and hangs
+    cd out/crashes
+    ls | cat -n | while read n f; do mv "$f" "$fuzz_res_dir/crash_$n.$file_ext"; done
+    cd ../hangs
+    ls | cat -n | while read n f; do mv "$f" "$fuzz_res_dir/hang_$n.$file_ext"; done
+    cd ../..
+    rm -f "$fuzz_res_dir/readme.txt"
+   fi
+  fi
+
+  cd "$orig_path"
+
+  if [ $no_fuzz_cleanup = 0 ] ; then
+   rm -rf $fuzz_temp_dir
+
+   tests_gen=`ls $fuzz_res_dir | wc -w`
+   if [ $no_fuzz_cleanup != 0 ] ; then
+    tests_gen=1
+   fi
+
+   if [ $tests_gen = 0 ] ; then
+    rm -rf $fuzz_res_dir
+   else
+    echo "Generated with afl-fuzz -d $fuzz_cmd" > "$fuzz_res_dir/readme.txt"
+   fi
+  fi
+}
 
 #@do_test execute the command line given $1 using GNU time and store stats with return value, command line ($1) and subtest name ($2)
 ret=0
@@ -738,26 +884,62 @@ do_test ()
  fi
  log L_DEB "executing $1"
 
-subtest_idx=$((subtest_idx + 1))
+ subtest_idx=$((subtest_idx + 1))
 
-log_subtest="$LOGS_DIR/$TEST_NAME-logs-$subtest_idx-$2.txt"
-stat_subtest="$TEMP_DIR/$TEST_NAME-stats-$subtest_idx-$2.sh"
-SUBTEST_NAME=$2
+ log_subtest="$LOGS_DIR/$TEST_NAME-logs-$subtest_idx-$2.txt"
+ stat_subtest="$TEMP_DIR/$TEST_NAME-stats-$subtest_idx-$2.sh"
+ SUBTEST_NAME=$2
+
+ if [ $enable_fuzzing = 0 ] ; then
+  fuzz_test=0
+ fi
+
+ #fuzzing on: check all args, detect ones matching input files in $maindir and fuzz them
+ #note that this is not perfect since the command line may modify an existing MP4
+ #so each successfull afl-fuzz test (not call!) will modify the input...
+ if [ $fuzz_test != 0 ] ; then
+  fuzz_dir="$LOCAL_OUT_DIR/fuzzing/$TEST_NAME_$SUBTEST_NAME/"
+  mkdir -p fuzz_dir
+  fuzz_sub_idx=1
+  for word in $1 ; do
+   is_file_arg=0
+   case "$word" in
+     $main_dir/*)
+      is_file_arg=1;;
+   esac
+
+   if [ $is_file_arg != 0 ] ; then
+    fuzz_src=${word%:*}
+    if [ -f $fuzz_src ] ; then
+      do_fuzz "$fuzz_src" "$1"
+      fuzz_sub_idx=$((fuzz_sub_idx + 1))
+    fi
+   fi
+  done
+
+  if [ $no_fuzz_cleanup = 0 ] ; then
+   crashes=`ls $fuzz_dir | wc -w`
+   if [ $crashes = 0 ] ; then
+    rm -rf $fuzz_dir
+   fi
+  fi
+
+  #we still run the subtest in fuzz mode, since further subtests may use the output of this test
+ fi
 
 echo "" > $log_subtest
 echo "*** Subtest \"$2\": executing \"$1\" ***" >> $log_subtest
 
-$GNU_TIME -o $stat_subtest -f ' EXECUTION_STATUS="OK"\n RETURN_STATUS=%x\n MEM_TOTAL_AVG=%K\n MEM_RESIDENT_AVG=%t\n MEM_RESIDENT_MAX=%M\n CPU_PERCENT=%P\n CPU_ELAPSED_TIME=%E\n CPU_USER_TIME=%U\n CPU_KERNEL_TIME=%S\n PAGE_FAULTS=%F\n FILE_INPUTS=%I\n SOCKET_MSG_REC=%r\n SOCKET_MSG_SENT=%s' $1 >> $log_subtest 2>&1
+timeout_args=""
+if [ $enable_timeout != 0 ] ; then
+timeout_args="$GNU_TIMEOUT $test_timeout"
+fi
+
+$timeout_args $GNU_TIME -o $stat_subtest -f ' EXECUTION_STATUS="OK"\n RETURN_STATUS=%x\n MEM_TOTAL_AVG=%K\n MEM_RESIDENT_AVG=%t\n MEM_RESIDENT_MAX=%M\n CPU_PERCENT=%P\n CPU_ELAPSED_TIME=%E\n CPU_USER_TIME=%U\n CPU_KERNEL_TIME=%S\n PAGE_FAULTS=%F\n FILE_INPUTS=%I\n SOCKET_MSG_REC=%r\n SOCKET_MSG_SENT=%s' $1 >> $log_subtest 2>&1
 rv=$?
 
 echo "SUBTEST_NAME=$2" >> $stat_subtest
 echo "SUBTEST_IDX=$subtest_idx" >> $stat_subtest
-
-if [ $rv -gt 2 ] ; then
- echo " Return Value $rv - re-executing without GNU TIME" >> $log_subtest
- $1 >> $log_subtest 2>&1
- rv=$?
-fi
 
 #regular error, check if this is a negative test.
 if [ $rv -eq 1 ] ; then
@@ -769,14 +951,16 @@ if [ $rv -eq 1 ] ; then
  if [ -f $negative_test_stderr ] ; then
   #look for all lines in -stderr file, if one found consider this a success
   while read line ; do
-   res_err=`grep -w "$line" $log_subtest`
+   res_err=`grep -o "$line" $log_subtest`
    if [ -n "$res_err" ]; then
     echo "Negative test detected, reverting to success (found \"$res_err\" in stderr)" >> $log_subtest
     rv=0
     echo "" > $stat_subtest
     break
    fi
-  done < $negative_test_stderr
+  #remove windows style endlines as they may cause some problems
+  #also remove empty lines otherwise grep always matches
+  done < <(tr -d '\r' <$negative_test_stderr | sed '/^$/d' )
  fi
 fi
 
@@ -1148,8 +1332,7 @@ if [ -f $i ] ; then
 
 #reset stats
 TEST_SKIP=0
-SUBTEST_FAIL=0
-SUBTEST_EXEC_NA=0
+TEST_EXEC_NA=0
 SUBTESTS_LEAK=0
 NB_HASH_SUBTESTS=0
 NB_HASH_SUBTESTS_MISSING=0
@@ -1168,8 +1351,16 @@ fi
 TESTS_TOTAL=$((TESTS_TOTAL + 1))
 if [ $TEST_SKIP = 0 ] ; then
  TESTS_DONE=$((TESTS_DONE + 1))
+cp $i "test.txt"
 else
  TESTS_SKIP=$((TESTS_SKIP + $TEST_SKIP))
+fi
+
+if [ $TEST_EXEC_NA != 0 ] ; then
+ if [ $TEST_FAIL = 0 ] ; then
+  TEST_FAIL=1
+ fi
+ TESTS_EXEC_NA=$((TESTS_EXEC_NA + 1))
 fi
 
 if [ $TEST_FAIL = 0 ] ; then
@@ -1179,16 +1370,12 @@ else
  rm -f $i > /dev/null
 fi
 
-if [ $SUBTEST_EXEC_NA != 0 ] ; then
-  TESTS_EXEC_NA=$((TESTS_EXEC_NA + 1))
-fi
-
 if [ $SUBTESTS_LEAK != 0 ] ; then
   TESTS_LEAK=$((TESTS_LEAK + 1))
 fi
 
-SUBTESTS_FAIL=$((SUBTESTS_FAIL + $SUBTEST_FAIL))
-SUBTESTS_EXEC_NA=$((SUBTESTS_EXEC_NA + $SUBTEST_FAIL))
+SUBTESTS_FAIL=$((SUBTESTS_FAIL + $TEST_FAIL))
+SUBTESTS_EXEC_NA=$((SUBTESTS_EXEC_NA + $TEST_EXEC_NA))
 SUBTESTS_DONE=$((SUBTESTS_DONE + $NB_SUBTESTS))
 SUBTESTS_LEAK=$((SUBTESTS_LEAK + $SUBTESTS_LEAK))
 SUBTESTS_HASH=$((SUBTESTS_HASH + $NB_HASH_SUBTESTS))
@@ -1302,6 +1489,9 @@ ctrl_c_trap() {
 	exit
 }
 
+# disable nullglobing in case sub-scripts aren't made for it
+shopt -u nullglob
+
 #run our tests
 if [ -n "$url_arg" ] ; then
  current_script=$url_arg
@@ -1313,7 +1503,7 @@ else
   fi
   current_script=$i
   source $i
-
+  cd $main_dir
   #break if error and error
   if [ $strict_mode = 1 ] ; then
    #wait for all tests to be done before checking error marker

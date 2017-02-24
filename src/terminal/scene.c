@@ -96,7 +96,7 @@ GF_Scene *gf_scene_new(GF_Scene *parentScene)
 
 	//copy over pause_at_first_frame flag so that new subscene is not paused right away
 	if (parentScene)
-		tmp->pause_at_first_frame = parentScene->pause_at_first_frame;
+		tmp->first_frame_pause_type = parentScene->first_frame_pause_type;
 
 #ifndef GPAC_DISABLE_VRML
 	tmp->extern_protos = gf_list_new();
@@ -1029,12 +1029,19 @@ static void gf_scene_get_video_size(GF_MediaObject *mo, u32 *w, u32 *h)
 		d = (pixel_ar) & 0x0000FFFF;
 		*w = (*w * n) / d;
 	}
+#ifndef GPAC_DISABLE_3D
+	if (mo->odm) {
+		if (mo->odm->term->compositor->frame_packing==GF_3D_STEREO_TOP) *h /= 2;
+		else if (mo->odm->term->compositor->frame_packing==GF_3D_STEREO_SIDE) *w /= 2;
+	}
+#endif
 }
 
 void gf_scene_force_size_to_video(GF_Scene *scene, GF_MediaObject *mo)
 {
 	u32 w, h;
 	gf_scene_get_video_size(mo, &w, &h);
+
 	if (w && h) gf_scene_force_size(scene, w, h);
 }
 
@@ -1447,8 +1454,11 @@ void gf_scene_regenerate(GF_Scene *scene)
 		evt.type = GF_EVENT_SENSOR_REQUEST;
 		evt.activate_sensor.activate = scene->vr_type;
 		evt.activate_sensor.sensor_type = GF_EVENT_SENSOR_ORIENTATION;
-		gf_term_send_event(scene->root_od->term, &evt);
-		scene->root_od->term->orientation_sensors_active = scene->vr_type;
+		if (gf_term_send_event(scene->root_od->term, &evt)==GF_TRUE) {
+			scene->root_od->term->orientation_sensors_active = scene->vr_type;
+		} else {
+			scene->root_od->term->orientation_sensors_active = GF_FALSE;
+		}
 	}
 
 
@@ -2045,27 +2055,23 @@ void gf_scene_force_size(GF_Scene *scene, u32 width, u32 height)
 	GF_LOG(GF_LOG_INFO, GF_LOG_COMPOSE, ("[Scene] Forcing scene size to %d x %d\n", width, height));
 
 	if (scene->vr_type) {
-		GF_Node *node;
-		u32 radius;
+		/*for 360 don't set scene size to full-size , only half of it*/
 		width /= 2;
 		height /= 2;
+		/*if we already processed a force size in 360, don't do it again*/
+		if (scene->force_size_set) 
+			return;
 
-		radius = MAX(width, height) / 2;
 #ifndef GPAC_DISABLE_VRML
+		scene->force_size_set = GF_TRUE;
 		if (! scene->is_srd) {
-			node = gf_sg_find_node_by_name(scene->graph, "DYN_GEOM1");
-			if (node) {
+			GF_Node *node = gf_sg_find_node_by_name(scene->graph, "DYN_GEOM1");
+			if (node && (((M_Sphere *)node)->radius == FIX_ONE)) {
+				u32 radius = MAX(width, height) / 2;
+
 				((M_Sphere *)node)->radius = - INT2FIX(radius);
 				gf_node_changed(node, NULL);
 			}
-		}
-
-		node = gf_sg_find_node_by_name(scene->graph, "DYN_VP");
-		if (node) {
-			//((M_Viewpoint*)node)->position.z = INT2FIX(MIN(width, height) ) / 2;
-			((M_Viewpoint*)node)->position.z = 0;
-
-			gf_node_changed(node, NULL);
 		}
 #endif /* GPAC_DISABLE_VRML */
 	}
@@ -2100,7 +2106,11 @@ void gf_scene_force_size(GF_Scene *scene, u32 width, u32 height)
 				width = com.par.width;
 				height = com.par.height;
 			}
-			gf_sg_set_scene_size_info(scene->graph, width, height, 1);
+			if (scene->vr_type) {
+				gf_sg_set_scene_size_info(scene->graph, 0, 0, 1);
+			} else {
+				gf_sg_set_scene_size_info(scene->graph, width, height, 1);
+			}
 			scene->force_size_set = 1;
 		} else {
 			u32 w, h;
@@ -2113,6 +2123,7 @@ void gf_scene_force_size(GF_Scene *scene, u32 width, u32 height)
 				devt.type = GF_EVENT_SCENE_SIZE;
 				devt.screen_rect.width = INT2FIX(width);
 				devt.screen_rect.height = INT2FIX(height);
+
 				devt.key_flags = scene->is_dynamic_scene ? (scene->vr_type ? 2 : 1) : 0;
 
 				gf_scene_notify_event(scene, GF_EVENT_SCENE_SIZE, NULL, &devt, GF_OK, GF_FALSE);
@@ -2133,8 +2144,12 @@ void gf_scene_force_size(GF_Scene *scene, u32 width, u32 height)
 			}
 		}
 	}
-	gf_sg_set_scene_size_info(scene->graph, width, height, GF_TRUE);
 
+	if (scene->vr_type) {
+		gf_sg_set_scene_size_info(scene->graph, 0, 0, GF_TRUE);
+	} else {
+		gf_sg_set_scene_size_info(scene->graph, width, height, GF_TRUE);
+	}
 	if (scene->is_srd)
 		gf_scene_regenerate(scene);
 
@@ -2800,7 +2815,8 @@ void gf_scene_select_scalable_addon(GF_Scene *scene, GF_ObjectManager *odm)
 	}
 	memset(&com, 0, sizeof(GF_NetworkCommand));
 	com.command_type = GF_NET_CHAN_NALU_MODE;
-	com.nalu_mode.extract_mode = nalu_annex_b ? 1 : 0;
+	//force AnnexB mode and no sync sample seeking
+	com.nalu_mode.extract_mode = nalu_annex_b ? 2 : 0;
 	count = gf_list_count(odm->channels);
 	for (i=0; i<count; i++) {
 		com.base.on_channel = ch = gf_list_get(odm->channels, i);

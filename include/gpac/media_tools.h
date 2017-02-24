@@ -847,10 +847,18 @@ GF_Err gf_dasher_process(GF_DASHSegmenter *dasher, Double sub_duration);
 /*! 
  Returns time to wait until end of currently generated segments
  *	\param dasher the DASH segmenter object
+ *  \param ms_ins_session if set, retrives the number of ms since the start of the dash session
  *	\return time to wait in milliseconds
 */
-u32 gf_dasher_next_update_time(GF_DASHSegmenter *dasher);
+u32 gf_dasher_next_update_time(GF_DASHSegmenter *dasher, u64 *ms_ins_session);
 
+
+/*! 
+ Sets dasher start date, rather than use current time. Used for debugging purposes, such as simulating long lasting sessions.
+ *	\param dasher the DASH segmenter object
+ *  \param dash_utc_start_date start date as UTC timstamp. If 0, current time is used
+*/
+void gf_dasher_set_start_date(GF_DASHSegmenter *dasher, u64 dash_utc_start_date);
 
 #ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 /*!
@@ -950,6 +958,10 @@ typedef struct __track_exporter
 	u32 flags;
 	/*! non-ISOBMF source file (AVI, TS)*/
 	char *in_name;
+	/*! set to TRUE if no additionnal files are to be created*/
+	Bool nhml_only;
+	/*! optionnal FILE for output*/
+	FILE *dump_file;
 } GF_MediaExporter;
 
 /*!
@@ -958,6 +970,12 @@ typedef struct __track_exporter
  \return  error if any
  */
 GF_Err gf_media_export(GF_MediaExporter *dump);
+
+GF_Err gf_media_export_nhml(GF_MediaExporter *dumper, Bool dims_doc);
+
+#ifndef GPAC_DISABLE_VTT
+GF_Err gf_webvtt_dump_iso_track(GF_MediaExporter *dumper, char *szName, u32 track, Bool merge, Bool box_dump);
+#endif
 
 #endif /*GPAC_DISABLE_MEDIA_EXPORT*/
 

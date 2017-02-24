@@ -295,7 +295,7 @@ Bool GPAC_EventProc(void *ptr, GF_Event *evt)
 			if (!gyro_dev) {
 				gyro_dev = sensor_create(SENSOR_ORIENTATION, ios_sensor_callback);
 				if (!gyro_dev)
-					return 0;
+					return GF_FALSE;
 			}
 			if (evt->activate_sensor.activate) {
 				/*start sensors*/
@@ -303,8 +303,9 @@ Bool GPAC_EventProc(void *ptr, GF_Event *evt)
 			} else if (gyro_dev) {
 				sensor_stop(gyro_dev);
 			}
+			return GF_TRUE;
 		}
-		break;
+		return GF_FALSE;
 	}
 	return 0;
 }
@@ -348,6 +349,48 @@ static void init_rti_logs(char *rti_file, char *url, Bool use_rtix)
 	}
 }
 
+void set_cfg_option(char *opt_string)
+{
+	char *sep, *sep2, szSec[1024], szKey[1024], szVal[1024];
+	sep = strchr(opt_string, ':');
+	if (!sep) {
+		fprintf(stderr, "Badly formatted option %s - expected Section:Name=Value\n", opt_string);
+		return;
+	}
+	{
+		const size_t sepIdx = sep - opt_string;
+		strncpy(szSec, opt_string, sepIdx);
+		szSec[sepIdx] = 0;
+	}
+	sep ++;
+	sep2 = strchr(sep, '=');
+	if (!sep2) {
+		fprintf(stderr, "Badly formatted option %s - expected Section:Name=Value\n", opt_string);
+		return;
+	}
+	{
+		const size_t sepIdx = sep2 - sep;
+		strncpy(szKey, sep, sepIdx);
+		szKey[sepIdx] = 0;
+		strcpy(szVal, sep2+1);
+	}
+
+	if (!stricmp(szKey, "*")) {
+		if (stricmp(szVal, "null")) {
+			fprintf(stderr, "Badly formatted option %s - expected Section:*=null\n", opt_string);
+			return;
+		}
+		gf_cfg_del_section(cfg_file, szSec);
+		return;
+	}
+
+	if (!stricmp(szVal, "null")) {
+		szVal[0]=0;
+	}
+	gf_cfg_set_key(cfg_file, szSec, szKey, szVal[0] ? szVal : NULL);
+}
+
+
 static void on_progress_null(const void *_ptr, const char *_title, u64 done, u64 total)
 {
 }
@@ -360,8 +403,10 @@ int main (int argc, char *argv[])
 	const char *str;
 	char *ext;
 	u32 i;
+	u32 url_idx_plus_1 = 0;
 	u32 simulation_time = 0;
 	Bool auto_exit = 0;
+	Bool use_gui = 0;
 	Bool use_rtix = 0;
     GF_MemTrackerType mem_track = GF_MemTrackerNone;
 
@@ -379,10 +424,30 @@ int main (int argc, char *argv[])
 	fill_ar = visible = 0;
 	url_arg = the_cfg = rti_file = NULL;
 
+#ifdef GPAC_MEMORY_TRACKING
+	for (i=1; i<argc; i++) {
+		char *arg = argv[i];
+		if (!strcmp(arg, "-mem-track") || !strcmp(arg, "-mem-track-stack")) {
+            mem_track = !strcmp(arg, "-mem-track-stack") ? GF_MemTrackerBackTrace : GF_MemTrackerSimple;
+		}
+	}
+#endif
+
+	gf_sys_init(mem_track);
+	gf_set_progress_callback(NULL, on_progress_null);
+
+	cfg_file = gf_cfg_init(the_cfg, NULL);
+	if (!cfg_file) {
+		fprintf(stderr, "Error: Configuration File \"GPAC.cfg\" not found\n");
+		if (logfile) gf_fclose(logfile);
+		return 1;
+	}
+
 	for (i=1; i<argc; i++) {
 		char *arg = argv[i];
 		if (arg[0] != '-') {
 			url_arg = arg;
+			url_idx_plus_1 = i+1;
 		}
 		else if (!strcmp(arg, "-logs")) {
 			logs_settings = argv[i+1];
@@ -393,21 +458,25 @@ int main (int argc, char *argv[])
 			gf_log_set_callback(logfile, on_gpac_log);
 			i++;
 		}
+#ifndef GPAC_MEMORY_TRACKING
 		else if (!strcmp(arg, "-mem-track") || !strcmp(arg, "-mem-track-stack")) {
-#ifdef GPAC_MEMORY_TRACKING
-            mem_track = !strcmp(arg, "-mem-track-stack") ? GF_MemTrackerBackTrace : GF_MemTrackerSimple;
-#else
 			fprintf(stderr, "WARNING - GPAC not compiled with Memory Tracker - ignoring \"%s\"\n", arg);
-#endif
 		}
+#endif
 		else if (!strcmp(arg, "-no-audio")) no_audio = GF_TRUE;
 		else if (!strcmp(arg, "-bench")) bench_mode = 1;
 		else if (!strcmp(arg, "-vbench")) bench_mode = 2;
 		else if (!strcmp(arg, "-sbench")) bench_mode = 3;
-	}
-	
-	gf_sys_init(mem_track);
-	gf_set_progress_callback(NULL, on_progress_null);
+		else if (!strcmp(arg, "-gui") || !strcmp(arg, "-guid")) use_gui = 1;
+		else if (!strcmp(arg, "-opt")) {
+			set_cfg_option(argv[i+1]);
+			i++;
+		}
+		else if (!strcmp(arg, "-run-for")) {
+			simulation_time = atoi(argv[i+1]);
+			i++;
+		}
+ 	}
 
 	if (logs_settings) {
 		if (gf_log_set_tools_levels(logs_settings) != GF_OK) {
@@ -415,12 +484,7 @@ int main (int argc, char *argv[])
 		}
 		logs_set = GF_TRUE;
 	}
-	cfg_file = gf_cfg_init(the_cfg, NULL);
-	if (!cfg_file) {
-		fprintf(stderr, "Error: Configuration File \"GPAC.cfg\" not found\n");
-		if (logfile) gf_fclose(logfile);
-		return 1;
-	}
+
 	if (!logs_set)
 		gf_log_set_tools_levels( gf_cfg_get_key(cfg_file, "General", "Logs") );
 
@@ -469,9 +533,11 @@ int main (int argc, char *argv[])
 			if (path) {
 				strcat(the_url, path+1);
 				url_arg = the_url;
+				argv[url_idx_plus_1 - 1] = url_arg;
 			}
 		}
 	}
+	gf_sys_set_args(argc, (const char **) argv);
 	
 	user.config = cfg_file;
 	user.EventProc = GPAC_EventProc;
@@ -574,12 +640,13 @@ int main (int argc, char *argv[])
 
 			fprintf(stderr, "Hit 'h' for help\n\n");
 		}
-	} else if (url_arg) {
+	} else if (!use_gui && url_arg) {
 		gf_term_connect(term, url_arg);
 	} else {
 		str = gf_cfg_get_key(cfg_file, "General", "StartupFile");
 		if (str) {
-			strcpy(the_url, "MP4Client "GPAC_FULL_VERSION);
+			if (!url_arg)
+				strcpy(the_url, "MP4Client "GPAC_FULL_VERSION);
 			gf_term_connect(term, str);
 			startup_file = 1;
 		}
@@ -639,6 +706,10 @@ int main (int argc, char *argv[])
 	gf_term_disconnect(term);
 	if (rti_file) UpdateRTInfo("Disconnected\n");
 
+	if (gyro_dev) {
+		sensor_stop(gyro_dev);
+	}
+
 	GF_LOG(GF_LOG_INFO, GF_LOG_APP, ("Deleting terminal... "));
 	gf_term_del(term);
 	GF_LOG(GF_LOG_INFO, GF_LOG_APP, ("OK\n"));
@@ -648,10 +719,8 @@ int main (int argc, char *argv[])
 	gf_cfg_del(cfg_file);
 
 	if (gyro_dev) {
-		sensor_stop(gyro_dev);
 		sensor_destroy(&gyro_dev);
 	}
-
 
 #ifdef GPAC_MEMORY_TRACKING
 	if (mem_track && (gf_memory_size() || gf_file_handles_count() )) {

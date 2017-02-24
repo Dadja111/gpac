@@ -992,7 +992,7 @@ GF_Err gf_dm_sess_setup_from_url(GF_DownloadSession *sess, const char *url)
 {
 	Bool socket_changed = GF_FALSE;
 	GF_URL_Info info;
-
+	char *sep_frag=NULL;
 	if (!url) return GF_BAD_PARAM;
 
 	gf_dm_clear_headers(sess);
@@ -1003,8 +1003,14 @@ GF_Err gf_dm_sess_setup_from_url(GF_DownloadSession *sess, const char *url)
 	else if (sess->status>GF_NETIO_DISCONNECTED)
 		socket_changed = GF_TRUE;
 
+	//strip fragment
+	sep_frag = strchr(url, '#');
+	if (sep_frag) sep_frag[0]=0;
 	sess->last_error = gf_dm_get_url_info(url, &info, sess->orig_url);
-	if (sess->last_error) return sess->last_error;
+	if (sess->last_error) {
+		if (sep_frag) sep_frag[0]='#';
+		return sess->last_error;
+	}
 
 	if (!strstr(url, "://")) {
 		char c, *sep;
@@ -1078,6 +1084,7 @@ GF_Err gf_dm_sess_setup_from_url(GF_DownloadSession *sess, const char *url)
 		}
 	}
 	gf_dm_url_info_del(&info);
+	if (sep_frag) sep_frag[0]='#';
 
 	if (sess->sock && !socket_changed) {
 		sess->status = GF_NETIO_CONNECTED;
@@ -2653,6 +2660,10 @@ static GF_Err http_parse_remaining_body(GF_DownloadSession * sess, char * sHTTP)
 
 		//the data remaining from the last buffer (i.e size for chunk that couldn't be read because the buffer does not contain enough bytes)
 		if (sess->remaining_data && sess->remaining_data_size) {
+			if (sess->remaining_data_size >= buf_size) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_NETWORK, ("[HTTP] No HTTP chunk header found for %d bytes, assuming broken chunk transfer and aborting\n", sess->remaining_data_size));
+				return GF_NON_COMPLIANT_BITSTREAM;
+			}
 			memcpy(sHTTP, sess->remaining_data, sess->remaining_data_size);
 		}
 
@@ -2782,6 +2793,7 @@ static GF_Err wait_for_header_and_parse(GF_DownloadSession *sess, char * sHTTP)
 	//always set start time to the time at last attempt reply parsing
 	sess->start_time = gf_sys_clock_high_res();
 	sess->start_time_utc = gf_net_get_utc();
+	sess->chunked = GF_FALSE;
 
 	while (1) {
 		e = gf_dm_read_data(sess, sHTTP + bytesRead, buf_size - bytesRead, &res);

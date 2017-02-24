@@ -43,7 +43,7 @@ extern "C" {
 
 /*! \defgroup utils_grp Core Tools
  *	\brief Core definitions and tools of GPAC.
- *	
+ *
  * You will find in this module the documentation of the core tools used in GPAC.
 */
 
@@ -111,6 +111,9 @@ const char *gf_4cc_to_str(u32 type);
 */
 int gf_asprintf(char **buffer, const char *fmt, ...);
 
+
+size_t gf_fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
+
 /*!
  *	\brief file writing helper
  *
@@ -161,6 +164,15 @@ u64 gf_ftell(FILE *f);
  *	\note You only need to call this function if you're suspecting the file to be a large one (usually only media files), otherwise use regular stdio.
 */
 u64 gf_fseek(FILE *f, s64 pos, s32 whence);
+
+/*!
+ *	\brief get extension from filename
+ *
+ *	Returns a pointer to the start of a filepath extension or null
+ *	\param filename Path of the file, can be an absolute path
+*/
+char* gf_file_ext_start(const char* filename);
+
 
 /*! @} */
 
@@ -268,10 +280,8 @@ typedef enum
 	GF_INVALID_CONFIGURATION				= -52,
 	/*! The element has not been found */
 	GF_NOT_FOUND							= -53,
-	/*! The filter is missing at least one requirement */
-	GF_MISSING_REQUIREMENTS					= -54,
 	/*! Unexpected format of data */
-	GF_WRONG_DATAFORMAT						= -55
+	GF_PROFILE_NOT_SUPPORTED				= -54,
 } GF_Err;
 
 /*!
@@ -607,6 +617,15 @@ FILE *gf_temp_file_new(char ** const fileName);
  *	\return modification time of the file
  */
 u64 gf_file_modification_time(const char *filename);
+
+/*!
+ *	\brief File existence check
+ *
+ *	Moves or renames a file or directory.
+ *	\param fileName absolute path of the file / directory to move or rename
+ *	\return GF_TRUE if file exists
+ */
+Bool gf_file_exists(const char *fileName);
 
 /*!
  *	\brief Progress formatting

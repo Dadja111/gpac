@@ -30,7 +30,7 @@
 #include <sys/time.h>
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
-
+#include <errno.h>
 
 void X11_SetupWindow (GF_VideoOutput * vout);
 
@@ -41,7 +41,7 @@ static void X11_DestroyOverlay(XWindow *xwin)
 	if (xwin->overlay) XFree(xwin->overlay);
 	xwin->overlay = NULL;
 	xwin->xv_pf_format = 0;
-	if (xwin->xvport>=0) {
+	if (xwin->display && (xwin->xvport>=0)) {
 		XvUngrabPort(xwin->display, xwin->xvport, CurrentTime );
 		xwin->xvport = -1;
 	}
@@ -729,6 +729,7 @@ static void X11_HandleEvents(GF_VideoOutput *vout)
 	X11VID();
 	unsigned char keybuf[32];
 	XEvent xevent;
+	if (!xWindow->display) return;
 	the_window = xWindow->fullscreen ? xWindow->full_wnd : xWindow->wnd;
 	XSync(xWindow->display, False);
 
@@ -956,7 +957,9 @@ static GF_Err X11_SetupGLPixmap(GF_VideoOutput *vout, u32 width, u32 height)
 	XWindow *xWin = (XWindow *)vout->opaque;
 
 	if (xWin->glx_context) {
-		glXMakeCurrent(xWin->display, None, NULL);
+		if (xWin->gl_offscreen) glXMakeCurrent(xWin->display, xWin->gl_offscreen, NULL);
+		else glXMakeCurrent(xWin->display, None, NULL);
+
 		glXDestroyContext(xWin->display, xWin->glx_context);
 		xWin->glx_context = NULL;
 	}
@@ -1148,13 +1151,16 @@ GF_Err X11_ProcessEvent (struct _video_out * vout, GF_Event * evt)
 	X11VID ();
 
 	X11_SetupWindow(vout);
+	if (!xWindow->display) return GF_IO_ERR;
 
 	if (evt) {
 		switch (evt->type) {
 		case GF_EVENT_SET_CURSOR:
 			break;
 		case GF_EVENT_SET_CAPTION:
-			if (!xWindow->par_wnd) XStoreName (xWindow->display, xWindow->wnd, evt->caption.caption);
+			if (!xWindow->par_wnd && xWindow->wnd && evt->caption.caption) {
+				XStoreName(xWindow->display, xWindow->wnd, "");
+			}
 			break;
 		case GF_EVENT_SHOWHIDE:
 			break;
@@ -1349,6 +1355,10 @@ X11_SetupWindow (GF_VideoOutput * vout)
 	XInitThreads();
 
 	xWindow->display = XOpenDisplay (NULL);
+	if (!xWindow->display) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[X11] Failed to open X11 display %d\n", errno));
+		return;
+	}
 	xWindow->screennum = DefaultScreen (xWindow->display);
 	xWindow->screenptr = DefaultScreenOfDisplay (xWindow->display);
 	xWindow->visual = DefaultVisualOfScreen (xWindow->screenptr);
@@ -1716,6 +1726,8 @@ GF_Err X11_Setup(struct _video_out *vout, void *os_handle, void *os_display, u32
 void X11_Shutdown (struct _video_out *vout)
 {
 	X11VID ();
+	if (! xWindow->display) return;
+
 	X11_ReleaseBackBuffer (vout);
 
 #ifdef GPAC_HAS_OPENGL

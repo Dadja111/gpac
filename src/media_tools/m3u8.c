@@ -55,6 +55,7 @@ typedef struct _s_accumulated_attributes {
 	Bool is_master_playlist;
 	Bool is_media_segment;
 	Bool is_playlist_ended;
+	u64 playlist_utc_timestamp;
 	u64 byte_range_start, byte_range_end;
 	u64 init_byte_range_start, init_byte_range_end;
 	PlaylistElementDRMMethod key_method;
@@ -92,32 +93,25 @@ GF_Err playlist_element_del(PlaylistElement * e) {
 		return result;
 	if (e->title) {
 		gf_free(e->title);
-		e->title = NULL;
 	}
 	if (e->codecs) {
 		gf_free(e->codecs);
-		e->codecs = NULL;
 	}
 	if (e->language) {
 		gf_free(e->language);
-		e->language = NULL;
 	}
 	if (e->audio_group) {
 		gf_free(e->audio_group);
-		e->audio_group = NULL;
 	}
 	if (e->video_group) {
 		gf_free(e->video_group);
-		e->video_group = NULL;
 	}
 	if (e->key_uri) {
 		gf_free(e->key_uri);
-		e->key_uri = NULL;
 	}
 	memset(e->key_iv, 0, sizeof(bin128) );
-	assert(e->url);
-	gf_free(e->url);
-	e->url = NULL;
+	if (e->url) 
+		gf_free(e->url);
 
 	switch (e->element_type) {
 	case TYPE_UNKNOWN:
@@ -126,7 +120,6 @@ GF_Err playlist_element_del(PlaylistElement * e) {
 	case TYPE_PLAYLIST:
 		assert(e->element.playlist.elements);
 		result |= cleanup_list_of_elements(e->element.playlist.elements);
-		e->element.playlist.elements = NULL;
 	default:
 		break;
 	}
@@ -160,6 +153,8 @@ static PlaylistElement* playlist_element_new(PlaylistElementType element_type, c
 	e->init_byte_range_end = attribs->init_byte_range_end;
 	e->key_uri = (attribs->key_url ? gf_strdup(attribs->key_url) : NULL);
 	memcpy(e->key_iv, attribs->key_iv, sizeof(bin128));
+
+	e->utc_start_time = attribs->playlist_utc_timestamp;
 
 	assert(url);
 	e->url = gf_strdup(url);
@@ -398,7 +393,8 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 			if (end_ptr != ret[0]) {
 				attributes->version = int_value;
 			}
-			M3U8_COMPATIBILITY_VERSION(2);
+			//although technically it is mandated for v2 or more, don't complain if set for v1
+			M3U8_COMPATIBILITY_VERSION(1);
 		}
 		return ret;
 	}
@@ -444,7 +440,7 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 	ret = extract_attributes("#EXT-X-PROGRAM-DATE-TIME:", line, 1);
 	if (ret) {
 		/* #EXT-X-PROGRAM-DATE-TIME:<YYYY-MM-DDThh:mm:ssZ> */
-		GF_LOG(GF_LOG_INFO, GF_LOG_DASH,("[M3U8] EXT-X-PROGRAM-DATE-TIME not supported.\n", line));
+		if (ret[0]) attributes->playlist_utc_timestamp = gf_net_parse_date(ret[0]);
 		M3U8_COMPATIBILITY_VERSION(1);
 		return ret;
 	}
@@ -926,6 +922,7 @@ GF_Err declare_sub_playlist(char *currentLine, const char *baseURL, s_accumulate
 		attribs->title = NULL;
 	}
 	attribs->duration_in_seconds = 0;
+	attribs->playlist_utc_timestamp = 0;
 	attribs->bandwidth = 0;
 	attribs->stream_id = 0;
 	if (attribs->codecs != NULL) {
@@ -1028,9 +1025,9 @@ GF_Err gf_m3u8_parse_sub_playlist(const char *file, MasterPlaylist **playlist, c
 			if (strncmp("#EXT", currentLine, 4) == 0) {
 				attributes = parse_attributes(currentLine, &attribs);
 				if (attributes == NULL) {
-					GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, ("Comment at line %d : %s\n", currentLineNumber, currentLine));
+					GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, ("[M3U8]Comment at line %d : %s\n", currentLineNumber, currentLine));
 				} else {
-					GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, ("Directive at line %d: \"%s\", attributes=", currentLineNumber, currentLine));
+					GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, ("[M3U8] Directive at line %d: \"%s\", attributes=", currentLineNumber, currentLine));
 					i = 0;
 					while (attributes[i] != NULL) {
 						GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, (" [%d]='%s'", i, attributes[i]));
@@ -1095,7 +1092,7 @@ GF_Err gf_m3u8_parse_sub_playlist(const char *file, MasterPlaylist **playlist, c
 		gf_free(attribs.init_url);
 
 	if (attribs.version < attribs.compatibility_version) {
-		GF_LOG(GF_LOG_WARNING, GF_LOG_DASH, ("[M3U8] Version %d specified but tags from version %d detected\n", attribs.version, attribs.compatibility_version));
+		GF_LOG(GF_LOG_DEBUG, GF_LOG_DASH, ("[M3U8] Version %d specified but tags from version %d detected\n", attribs.version, attribs.compatibility_version));
 	}
 	return GF_OK;
 }

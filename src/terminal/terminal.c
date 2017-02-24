@@ -448,7 +448,8 @@ static GF_Err gf_term_step_clocks_intern(GF_Terminal * term, u32 ms_diff, Bool f
 					ck->Paused++;
 			}
 		}
-		term->compositor->step_mode = 1;
+		term->compositor->step_mode = GF_TRUE;
+		term->use_step_mode = GF_TRUE;
 		gf_sc_next_frame_state(term->compositor, GF_SC_DRAW_FRAME);
 
 		//resume/pause to trigger codecs state change 
@@ -483,6 +484,7 @@ static void gf_term_set_play_state(GF_Terminal *term, u32 PlayState, Bool reset_
 	if (!term || !term->root_scene) return;
 
 	prev_state = term->play_state;
+	term->use_step_mode = GF_FALSE;
 
 	if (PlayState==GF_STATE_PLAY_LIVE) {
 		PlayState = GF_STATE_PLAYING;
@@ -520,8 +522,8 @@ static void gf_term_set_play_state(GF_Terminal *term, u32 PlayState, Bool reset_
 	if (term->play_state == PlayState) return;
 	term->play_state = PlayState;
 
-	if (term->root_scene->pause_at_first_frame && (PlayState == GF_STATE_PLAYING))
-		term->root_scene->pause_at_first_frame = GF_FALSE;
+	if (term->root_scene->first_frame_pause_type && (PlayState == GF_STATE_PLAYING))
+		term->root_scene->first_frame_pause_type = 0;
 
 	if (!pause_clocks) return;
 
@@ -533,7 +535,7 @@ static void gf_term_set_play_state(GF_Terminal *term, u32 PlayState, Bool reset_
 
 }
 
-static void gf_term_connect_from_time_ex(GF_Terminal * term, const char *URL, u64 startTime, Bool pause_at_first_frame, Bool secondary_scene, const char *parent_path)
+static void gf_term_connect_from_time_ex(GF_Terminal * term, const char *URL, u64 startTime, u32 pause_at_first_frame, Bool secondary_scene, const char *parent_path)
 {
 	GF_Scene *scene;
 	GF_ObjectManager *odm;
@@ -572,7 +574,7 @@ static void gf_term_connect_from_time_ex(GF_Terminal * term, const char *URL, u6
 	/*render first visual frame and pause*/
 	if (pause_at_first_frame) {
 		gf_term_set_play_state(term, GF_STATE_STEP_PAUSE, 0, 0);
-		scene->pause_at_first_frame = GF_TRUE;
+		scene->first_frame_pause_type = pause_at_first_frame;
 	}
 
 	if (!strnicmp(URL, "views://", 8)) {
@@ -906,7 +908,7 @@ GF_Err gf_term_step_clocks(GF_Terminal * term, u32 ms_diff)
 
 }
 GF_EXPORT
-void gf_term_connect_from_time(GF_Terminal * term, const char *URL, u64 startTime, Bool pause_at_first_frame)
+void gf_term_connect_from_time(GF_Terminal * term, const char *URL, u64 startTime, u32 pause_at_first_frame)
 {
 	gf_term_connect_from_time_ex(term, URL, startTime, pause_at_first_frame, 0, NULL);
 }
@@ -1017,9 +1019,11 @@ GF_Err gf_term_set_option(GF_Terminal * term, u32 type, u32 value)
 		return GF_OK;
 	case GF_OPT_VIDEO_BENCH:
 		term->bench_mode = value;
+		return gf_sc_set_option(term->compositor, type, value);
 	case GF_OPT_MULTIVIEW_MODE:
 		term->compositor->multiview_mode = value;
-	//fallthrough
+		return gf_sc_set_option(term->compositor, type, value);
+
 	default:
 		return gf_sc_set_option(term->compositor, type, value);
 	}
@@ -1098,7 +1102,8 @@ u32 gf_term_get_option(GF_Terminal * term, u32 type)
 		return gf_dm_get_data_rate(term->downloader);
 	case GF_OPT_VIDEO_BENCH:
 		return term->bench_mode ? GF_TRUE : GF_FALSE;
-
+	case GF_OPT_ORIENTATION_SENSORS_ACTIVE:
+		return term->orientation_sensors_active;
 	default:
 		return gf_sc_get_option(term->compositor, type);
 	}

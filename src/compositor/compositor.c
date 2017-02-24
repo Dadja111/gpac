@@ -262,8 +262,11 @@ static void gf_sc_reconfig_task(GF_Compositor *compositor)
 GF_EXPORT
 Bool gf_sc_draw_frame(GF_Compositor *compositor, Bool no_flush, s32 *ms_till_next)
 {
+	Bool ret = GF_FALSE;
+
 	if (no_flush)
 		compositor->skip_flush=1;
+
 	gf_sc_render_frame(compositor);
 
 	if (ms_till_next) {
@@ -273,10 +276,11 @@ Bool gf_sc_draw_frame(GF_Compositor *compositor, Bool no_flush, s32 *ms_till_nex
 			*ms_till_next = compositor->ms_until_next_frame;
 	}
 	//next frame is late, we should redraw
-	if (compositor->ms_until_next_frame < 0) return GF_TRUE;
-	if (compositor->frame_draw_type) return GF_TRUE;
-	if (compositor->fonts_pending) return GF_TRUE;
-	return GF_FALSE;
+	if (compositor->ms_until_next_frame < 0) ret = GF_TRUE;
+	else if (compositor->frame_draw_type) ret = GF_TRUE;
+	else if (compositor->fonts_pending) ret = GF_TRUE;
+
+	return ret;
 }
 
 
@@ -586,8 +590,14 @@ GF_Compositor *gf_sc_new(GF_User *user, Bool self_threaded, GF_Terminal *term)
 	tmp->msg_type |= GF_SR_CFG_INITIAL_RESIZE;
 	/*set default size if owning output*/
 	if (tmp->user && !tmp->user->os_window_handler) {
+		const char *opt;
 		tmp->new_width = SC_DEF_WIDTH;
 		tmp->new_height = SC_DEF_HEIGHT;
+		opt = gf_cfg_get_key(user->config, "Compositor", "DefaultWidth");
+		if (opt) tmp->new_width = atoi(opt);
+		opt = gf_cfg_get_key(user->config, "Compositor", "DefaultHeight");
+		if (opt) tmp->new_height = atoi(opt);
+
 		tmp->msg_type |= GF_SR_CFG_SET_SIZE;
 	}
 
@@ -766,11 +776,11 @@ static void gf_sc_set_play_state(GF_Compositor *compositor, u32 PlayState)
 
 	/*step mode*/
 	if (PlayState==GF_STATE_STEP_PAUSE) {
-		compositor->step_mode = 1;
+		compositor->step_mode = GF_TRUE;
 		gf_sc_flush_next_audio(compositor);
 		compositor->paused = 1;
 	} else {
-		compositor->step_mode = 0;
+		compositor->step_mode = GF_FALSE;
 		if (compositor->audio_renderer) gf_sc_ar_control(compositor->audio_renderer, (compositor->paused && (PlayState==0xFF)) ? GF_SC_AR_RESET_HW_AND_PLAY : (compositor->paused ? GF_SC_AR_RESUME : GF_SC_AR_PAUSE) );
 		compositor->paused = (PlayState==GF_STATE_PAUSED) ? 1 : 0;
 	}
@@ -1456,6 +1466,15 @@ void gf_sc_reload_config(GF_Compositor *compositor)
 		}
 		break;
 	}
+
+	sOpt = gf_cfg_get_key(compositor->user->config, "Compositor", "FramePacking");
+	if (!sOpt) {
+		sOpt = "None";
+		gf_cfg_set_key(compositor->user->config, "Compositor", "FramePacking", "None");
+	}
+	if (!strcmp(sOpt, "Side")) compositor->frame_packing = GF_3D_STEREO_SIDE;
+	else if (!strcmp(sOpt, "Top")) compositor->frame_packing = GF_3D_STEREO_TOP;
+	else compositor->frame_packing = GF_3D_STEREO_NONE;
 
 	sOpt = gf_cfg_get_key(compositor->user->config, "Compositor", "CameraLayout");
 	if (!sOpt) {
@@ -2551,6 +2570,11 @@ void gf_sc_render_frame(GF_Compositor *compositor)
 	/*setup display before updating composite textures (some may require a valid openGL context)*/
 	gf_sc_recompute_ar(compositor, gf_sg_get_root_node(compositor->scene) );
 
+	if (compositor->video_setup_failed)	{
+		gf_sc_lock(compositor, 0);
+		return;
+	}
+
 #ifndef GPAC_DISABLE_LOG
 	txtime = gf_sys_clock();
 #endif
@@ -2727,7 +2751,7 @@ void gf_sc_render_frame(GF_Compositor *compositor)
 	compositor->video_frame_pending=0;
 	gf_sc_lock(compositor, 0);
 
-	if (frame_drawn) compositor->step_mode = 0;
+	if (frame_drawn) compositor->step_mode = GF_FALSE;
 
 	/*let the owner decide*/
 	if (compositor->no_regulation)
@@ -3051,7 +3075,11 @@ static Bool gf_sc_on_event_ex(GF_Compositor *compositor , GF_Event *event, Bool 
 			compositor may be locked on the video output (flush or whatever)!!
 			*/
 			Bool lock_ok = gf_mx_try_lock(compositor->mx);
-			if ((compositor->display_width!=event->size.width) || (compositor->display_height!=event->size.height)) {
+			if ((compositor->display_width!=event->size.width)
+					|| (compositor->display_height!=event->size.height)
+					|| (compositor->new_width && (compositor->new_width!=event->size.width))
+					|| (compositor->new_width && (compositor->new_height!=event->size.height))
+				) {
 
 				//OSX bug with SDL when requesting 4k window we get max screen height but 4k width ...
 #if defined(GPAC_CONFIG_DARWIN) && !defined(GPAC_IPHONE)
@@ -3063,16 +3091,12 @@ static Bool gf_sc_on_event_ex(GF_Compositor *compositor , GF_Event *event, Bool 
 #endif
 				compositor->new_width = event->size.width;
 				compositor->new_height = event->size.height;
+
 				compositor->msg_type |= GF_SR_CFG_SET_SIZE;
 				if (from_user) compositor->msg_type &= ~GF_SR_CFG_WINDOWSIZE_NOTIF;
 			} else {
 				/*remove pending resize notif but not resize requests*/
 				compositor->msg_type &= ~GF_SR_CFG_WINDOWSIZE_NOTIF;
-	
-				if (compositor->new_width || compositor->new_height) {
-					compositor->msg_type &= ~GF_SR_CFG_SET_SIZE;
-					compositor->new_width = compositor->new_height = 0;
-				}
 			}
 			if (lock_ok) gf_sc_lock(compositor, GF_FALSE);
 		}

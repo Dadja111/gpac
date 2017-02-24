@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.widget.Toast;
 
 /**
  * The view represented the blitted contents by libgpac
@@ -59,16 +60,19 @@ public class Osmo4GLSurfaceView extends GLSurfaceView implements GPACInstanceInt
     // ------------------------------------
     @Override
     public boolean onTouchEvent(final MotionEvent event) {
-        queueEvent(new Runnable() {
+	if(!Osmo4.isUIvisible() | Osmo4.IskeyboardVisible()){
+		queueEvent(new Runnable() {
 
-            @Override
-            public void run() {
-                GPACInstance instance = getInstance();
-                if (instance != null)
-                    instance.motionEvent(event);
-            }
-        });
-        return true;
+		    @Override
+		    public void run() {
+		        GPACInstance instance = getInstance();
+		        if (instance != null)
+		            instance.motionEvent(event);
+		    }
+		});
+		return true;
+	}
+    return false;
     }
 
     /**
@@ -78,14 +82,20 @@ public class Osmo4GLSurfaceView extends GLSurfaceView implements GPACInstanceInt
      * @param event
      * @return
      */
+    private static final long TIME_INTERVAL = 500;
+    private static long mBackPressed;
     private static boolean handleInGPAC(int keyCode, KeyEvent event) {
-        if (event.isSystem())
+        if (event.isSystem() && keyCode!=KeyEvent.KEYCODE_BACK)
             return false;
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_STOP:
             case KeyEvent.KEYCODE_MENU:
+		return false;
             case KeyEvent.KEYCODE_BACK:
-                return false;
+		if (mBackPressed + TIME_INTERVAL > System.currentTimeMillis()){
+			return false;
+		}
+                return true;
             default:
                 return true;
         }
@@ -93,6 +103,7 @@ public class Osmo4GLSurfaceView extends GLSurfaceView implements GPACInstanceInt
 
     @Override
     public boolean onKeyDown(final int keyCode, final KeyEvent event) {
+	if (keyCode == KeyEvent.KEYCODE_BACK) Toast.makeText(Osmo4.context, "Press back button twice to exit", Toast.LENGTH_SHORT).show();
         if (handleInGPAC(keyCode, event)) {
             Log.d(LOG_GL_SURFACE, "onKeyDown = " + keyCode); //$NON-NLS-1$
             queueEvent(new Runnable() {
@@ -114,6 +125,7 @@ public class Osmo4GLSurfaceView extends GLSurfaceView implements GPACInstanceInt
     public boolean onKeyUp(final int keyCode, final KeyEvent event) {
         if (handleInGPAC(keyCode, event)) {
             Log.d(LOG_GL_SURFACE, "onKeyUp =" + keyCode); //$NON-NLS-1$
+	    if (keyCode == KeyEvent.KEYCODE_BACK) mBackPressed = System.currentTimeMillis();
             queueEvent(new Runnable() {
 
                 @Override

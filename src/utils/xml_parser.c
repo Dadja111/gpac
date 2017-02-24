@@ -203,12 +203,13 @@ static GF_XMLSaxAttribute *xml_get_sax_attribute(GF_SAXParser *parser)
 static void xml_sax_swap(GF_SAXParser *parser)
 {
 	if (parser->current_pos && ((parser->sax_state==SAX_STATE_TEXT_CONTENT) || (parser->sax_state==SAX_STATE_COMMENT) ) ) {
-		assert(parser->line_size >= parser->current_pos);
-		parser->line_size -= parser->current_pos;
-		parser->file_pos += parser->current_pos;
-		if (parser->line_size) memmove(parser->buffer, parser->buffer + parser->current_pos, sizeof(char)*parser->line_size);
-		parser->buffer[parser->line_size] = 0;
-		parser->current_pos = 0;
+		if (parser->line_size >= parser->current_pos) {
+			parser->line_size -= parser->current_pos;
+			parser->file_pos += parser->current_pos;
+			if (parser->line_size) memmove(parser->buffer, parser->buffer + parser->current_pos, sizeof(char)*parser->line_size);
+			parser->buffer[parser->line_size] = 0;
+			parser->current_pos = 0;
+		}
 	}
 }
 
@@ -833,6 +834,9 @@ restart:
 				parser->sax_state = SAX_STATE_TEXT_CONTENT;
 				break;
 			}
+			if (!parser->elt_name_end) {
+				return GF_CORRUPTED_DATA;
+			}
 			sep = parser->buffer[parser->elt_name_end-1];
 			parser->buffer[parser->elt_name_end-1] = 0;
 			elt = parser->buffer + parser->elt_name_start-1;
@@ -1369,7 +1373,7 @@ char *gf_xml_sax_peek_node(GF_SAXParser *parser, char *att_name, char *att_value
 								if (!__is_copy) alloc_size += (u32) strlen(szLine); \
 								szLine = gf_realloc(szLine, alloc_size);	\
 							}\
-							if (__is_copy) { memcpy(szLine, __str, sizeof(char)*_len); szLine[_len] = 0; }\
+							if (__is_copy) { memmove(szLine, __str, sizeof(char)*_len); szLine[_len] = 0; }\
 							else strcat(szLine, __str); \
  
 	from_buffer=GF_FALSE;
@@ -1395,7 +1399,6 @@ char *gf_xml_sax_peek_node(GF_SAXParser *parser, char *att_name, char *att_value
 	alloc_size = att_len;
 	szLine = (char *) gf_malloc(sizeof(char)*alloc_size);
 	strcpy(szLine, parser->buffer + parser->att_name_start);
-	parser->buffer[parser->elt_name_end - 1] = '"';
 	cur_line = szLine;
 	att_len = (u32) strlen(att_value);
 	state = 0;

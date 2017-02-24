@@ -628,6 +628,7 @@ Bool CNativeWrapper::GPAC_EventProc(void *cbk, GF_Event *evt) {
 						return GF_FALSE;
 					env->env->CallVoidMethod(env->cbk_obj, env->cbk_sensorSwitch, evt->activate_sensor.activate);
 				}
+				return GF_TRUE;
 			}
 			break;
 		case GF_EVENT_SENSOR_ORIENTATION:
@@ -978,6 +979,7 @@ void CNativeWrapper::translate_key(ANDROID_KEYCODE keycode, GF_EventKey *evt) {
 	case ANDROID_KEYCODE_CLEAR:
 		evt->key_code = GF_KEY_CLEAR;
 		break;
+	case ANDROID_KEYCODE_DPAD_CENTER:
 	case ANDROID_KEYCODE_ENTER:
 		evt->key_code = GF_KEY_ENTER;
 		evt->hw_code = 13;

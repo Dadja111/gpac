@@ -244,7 +244,8 @@ struct _scene
 	Bool main_addon_selected;
 	u32 sys_clock_at_main_activation, obj_clock_at_main_activation;
 
-	Bool pause_at_first_frame;
+	//0: no pause - 1: paused and trigger pause command to net, 2: only clocks are paused but commands not sent
+	u32 first_frame_pause_type;
 	u32 vr_type;
 };
 
@@ -476,6 +477,8 @@ struct _tag_terminal
 	u32 disconnect_request_status;
 	
 	Bool orientation_sensors_active;
+	//set when compositor uses step mode, in order to drop frames even when the clock is paused
+	Bool use_step_mode;
 };
 
 
@@ -579,6 +582,8 @@ struct _object_clock
 	Bool has_media_time_shift;
 
 	u16 ocr_on_esid;
+
+	u64 ts_shift;
 };
 
 /*destroys clock*/
@@ -667,8 +672,8 @@ struct _es_channel
 	char *pull_reaggregated_buffer;
 	/*channel buffer flag*/
 	Bool BufferOn;
-	/*min level to trigger buffering on, max to trigger it off. */
-	u32 MinBuffer, MaxBuffer;
+	/*min level to trigger buffering on, max to trigger it off for playback resume, and max amount of prefetch buffer*/
+	u32 MinBuffer, MaxBuffer, MaxBufferOccupancy;
 	/*amount of buffered media - this is the DTS of the last received AU minus the onject clock time, to make sure
 	we always have MaxBuffer ms ready for composition when resuming the clock*/
 	s32 BufferTime;
@@ -766,6 +771,7 @@ struct _es_channel
 
 	Bool pull_forced_buffer;
 
+	u64 ts_shift;
 };
 
 /*creates a new channel for this stream*/
@@ -864,6 +870,8 @@ struct _generic_codec
 	/*base process routine*/
 	GF_Err (*process)(GF_Codec *codec, u32 TimeAvailable);
 
+	GF_List *blacklisted;
+
 	/*composition memory for media streams*/
 	struct _composition_memory *CB;
 	/*input media channles*/
@@ -927,7 +935,7 @@ struct _generic_codec
 
 	/*signals that CB should be resized to this value once all units in CB has been consumed (codec config change)*/
 	u32 force_cb_resize;
-	
+	u32 profile_level;
 	Bool hybrid_layered_coded;
 };
 
@@ -945,6 +953,7 @@ instance when loading a BT with an animation stream*/
 GF_Codec *gf_codec_use_codec(GF_Codec *codec, GF_ObjectManager *odm);
 
 GF_Err gf_codec_resize_composition_buffer(GF_Codec *dec, u32 NewSize);
+GF_Err gf_codec_change_decoder(GF_Codec *codec);
 
 /*OD manager*/
 

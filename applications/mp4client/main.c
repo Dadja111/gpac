@@ -28,6 +28,7 @@
 #include <gpac/terminal.h>
 #include <gpac/term_info.h>
 #include <gpac/constants.h>
+#include <gpac/events.h>
 #include <gpac/media_tools.h>
 #include <gpac/options.h>
 #include <gpac/modules/service.h>
@@ -288,6 +289,8 @@ void PrintUsage()
 	        "\t-scale s:       scales the visual size (default: 1)\n"
 	        "\t-fill:          uses fill aspect ratio for dumping (default: none)\n"
 	        "\t-show:          shows window while dumping (default: no)\n"
+	        "\n"
+	        "\t-uncache:       Revert all cached items to their original name and location. Does not start player.\n"
 	        "\n"
 	        "\t-help:          shows this screen\n"
 	        "\n"
@@ -728,7 +731,7 @@ Bool GPAC_EventProc(void *ptr, GF_Event *evt)
 				gf_term_set_option(term, GF_OPT_ASPECT_RATIO, GF_ASPECT_RATIO_KEEP);
 			break;
 		case GF_KEY_O:
-			if (evt->key.flags & GF_KEY_MOD_CTRL && is_connected) {
+			if ((evt->key.flags & GF_KEY_MOD_CTRL) && is_connected) {
 				if (gf_term_get_option(term, GF_OPT_MAIN_ADDON)) {
 					fprintf(stderr, "Resuming to main content\n");
 					gf_term_set_option(term, GF_OPT_PLAY_STATE, GF_STATE_PLAY_LIVE);
@@ -738,7 +741,7 @@ Bool GPAC_EventProc(void *ptr, GF_Event *evt)
 			}
 			break;
 		case GF_KEY_P:
-			if (evt->key.flags & GF_KEY_MOD_CTRL && is_connected) {
+			if ((evt->key.flags & GF_KEY_MOD_CTRL) && is_connected) {
 				u32 pause_state = gf_term_get_option(term, GF_OPT_PLAY_STATE) ;
 				fprintf(stderr, "[Status: %s]\n", pause_state ? "Playing" : "Paused");
 				if ((pause_state == GF_STATE_PAUSED) && (evt->key.flags & GF_KEY_MOD_SHIFT)) {
@@ -783,17 +786,17 @@ Bool GPAC_EventProc(void *ptr, GF_Event *evt)
 			gf_term_toggle_addons(term, addon_visible);
 			break;
 		case GF_KEY_UP:
-			if (evt->key.flags & VK_MOD && is_connected) {
+			if ((evt->key.flags & VK_MOD) && is_connected) {
 				do_set_speed(playback_speed * 2);
 			}
 			break;
 		case GF_KEY_DOWN:
-			if (evt->key.flags & VK_MOD && is_connected) {
+			if ((evt->key.flags & VK_MOD) && is_connected) {
 				do_set_speed(playback_speed / 2);
 			}
 			break;
 		case GF_KEY_LEFT:
-			if (evt->key.flags & VK_MOD && is_connected) {
+			if ((evt->key.flags & VK_MOD) && is_connected) {
 				do_set_speed(-1 * playback_speed );
 			}
 			break;
@@ -1115,6 +1118,60 @@ void set_cfg_option(char *opt_string)
 	gf_cfg_set_key(cfg_file, szSec, szKey, szVal[0] ? szVal : NULL);
 }
 
+Bool revert_cache_file(void *cbck, char *item_name, char *item_path, GF_FileEnumInfo *file_info)
+{
+	const char *url;
+	char *sep;
+	GF_Config *cached;
+	if (strncmp(item_name, "gpac_cache_", 11)) return GF_FALSE;
+	cached = gf_cfg_new(NULL, item_path);
+	url = gf_cfg_get_key(cached, "cache", "url");
+	if (url) url = strstr(url, "://");
+	if (url) {
+		u32 i, len, dir_len=0, k=0;
+		char *dst_name;
+		sep = strstr(item_path, "gpac_cache_");
+		if (sep) {
+			sep[0] = 0;
+			dir_len = strlen(item_path);
+			sep[0] = 'g';
+		}
+		url+=3;
+		len = strlen(url);
+		dst_name = gf_malloc(len+dir_len+1);
+		memset(dst_name, 0, len+dir_len+1);
+
+		strncpy(dst_name, item_path, dir_len);
+		k=dir_len;
+		for (i=0; i<len; i++) {
+			dst_name[k] = url[i];
+			if (dst_name[k]==':') dst_name[k]='_';
+			else if (dst_name[k]=='/') {
+				if (!gf_dir_exists(dst_name))
+					gf_mkdir(dst_name);
+			}
+			k++;
+		}
+		sep = strrchr(item_path, '.');
+		if (sep) {
+			sep[0]=0;
+			if (gf_file_exists(item_path)) {
+				gf_move_file(item_path, dst_name);
+			}
+			sep[0]='.';
+		}
+		gf_free(dst_name);
+	}
+	gf_cfg_del(cached);
+	gf_delete_file(item_path);
+	return GF_FALSE;
+}
+void do_flatten_cache(const char *cache_dir)
+{
+	gf_enum_directory(cache_dir, GF_FALSE, revert_cache_file, NULL, "*.txt");
+}
+
+
 #ifdef WIN32
 #include <wincon.h>
 #endif
@@ -1142,7 +1199,7 @@ int mp4client_main(int argc, char **argv)
     GF_MemTrackerType mem_track = GF_MemTrackerNone;
 #endif
 	Double fps = GF_IMPORT_DEFAULT_FPS;
-	Bool fill_ar, visible;
+	Bool fill_ar, visible, do_uncache;
 	char *url_arg, *out_arg, *the_cfg, *rti_file, *views, *default_com;
 	FILE *logfile = NULL;
 	Float scale = 1;
@@ -1156,7 +1213,7 @@ int mp4client_main(int argc, char **argv)
 	memset(&user, 0, sizeof(GF_User));
 
 	dump_mode = DUMP_NONE;
-	fill_ar = visible = GF_FALSE;
+	fill_ar = visible = do_uncache = GF_FALSE;
 	url_arg = out_arg = the_cfg = rti_file = views = default_com = NULL;
 	nb_times = 0;
 	times[0] = 0;
@@ -1351,6 +1408,7 @@ int mp4client_main(int argc, char **argv)
 			else if (!strcmp(arg, "-pause")) pause_at_first = 1;
 			else if (!strcmp(arg, "-play-from")) {
 				play_from = atof((const char *) argv[i+1]);
+				i++;
 			}
 			else if (!strcmp(arg, "-speed")) {
 				playback_speed = FLT2FIX( atof((const char *) argv[i+1]) );
@@ -1370,6 +1428,8 @@ int mp4client_main(int argc, char **argv)
 				fill_ar = GF_TRUE;
 			} else if (!strcmp(arg, "-show")) {
 				visible = 1;
+			} else if (!strcmp(arg, "-uncache")) {
+				do_uncache = GF_TRUE;
 			}
 			else if (!strcmp(arg, "-exit")) auto_exit = GF_TRUE;
 			else if (!stricmp(arg, "-views")) {
@@ -1391,6 +1451,14 @@ int mp4client_main(int argc, char **argv)
 		fprintf(stderr, "GPAC Config updated\n");
 		return 0;
 	}
+	if (do_uncache) {
+		const char *cache_dir = gf_cfg_get_key(cfg_file, "General", "CacheDirectory");
+		do_flatten_cache(cache_dir);
+		fprintf(stderr, "GPAC Cache dir %s flattened\n", cache_dir);
+		gf_cfg_del(cfg_file);
+		return 0;
+	}
+
 	if (dump_mode && !url_arg ) {
 		FILE *test;
 		url_arg = (char *)gf_cfg_get_key(cfg_file, "General", "StartupFile");
@@ -1508,6 +1576,14 @@ int mp4client_main(int argc, char **argv)
 		} else {
 			gf_cfg_set_key(user.config, "Video", "DisableVSync", "yes");
 		}
+	}
+
+	{
+		char dim[50];
+		sprintf(dim, "%d", forced_width);
+		gf_cfg_set_key(user.config, "Compositor", "DefaultWidth", forced_width ? dim : NULL);
+		sprintf(dim, "%d", forced_height);
+		gf_cfg_set_key(user.config, "Compositor", "DefaultHeight", forced_height ? dim : NULL);
 	}
 
 	fprintf(stderr, "Loading GPAC Terminal\n");
@@ -2256,7 +2332,7 @@ force_input:
 
 #ifdef GPAC_MEMORY_TRACKING
 	if (mem_track && (gf_memory_size() || gf_file_handles_count() )) {
-        gf_log_set_tool_level(GF_LOG_MEMORY, GF_LOG_INFO);
+	        gf_log_set_tool_level(GF_LOG_MEMORY, GF_LOG_INFO);
 		gf_memory_print();
 		return 2;
 	}

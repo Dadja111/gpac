@@ -2242,7 +2242,7 @@ GF_Err gf_import_isomedia(GF_MediaImporter *import)
 			/*if not first sample and same DTS as previous sample, force DTS++*/
 			if (i && (samp->DTS<=sampDTS)) {
 				if (i+1 < num_samples) {
-					GF_LOG(GF_LOG_WARNING, GF_LOG_PARSER, ("[ISOM import] 0-duration sample detected at DTS %d - adjusting\n", samp->DTS));
+					GF_LOG(GF_LOG_WARNING, GF_LOG_PARSER, ("[ISOM import] 0-duration sample detected at DTS %u - adjusting\n", samp->DTS));
 				}
 				samp->DTS = sampDTS + 1;
 			}
@@ -3124,19 +3124,20 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 	s64 media_size, media_done, offset;
 	u64 duration, sample_duration;
 	FILE *nhml, *mdia, *info;
-	char *dictionary = NULL;
+	char *dictionary = NULL, *auxiliary_mime_types = NULL;
 	char *ext, szName[1000], szMedia[GF_MAX_PATH], szMediaTemp[GF_MAX_PATH], szInfo[GF_MAX_PATH], szXmlFrom[1000], szXmlTo[1000], szXmlHeaderEnd[1000];
 	char *specInfo;
 	GF_GenericSampleDescription sdesc;
 	GF_DOMParser *parser;
 	GF_XMLNode *root, *node, *childnode;
-	char *szRootName, *szSampleName, *szImpName;
+	char *szRootName, *szSampleName, *szSubSampleName, *szImpName;
 #ifndef GPAC_DISABLE_ZLIB
 	Bool use_dict = GF_FALSE;
 #endif
 
 	szRootName = dims_doc ? "DIMSStream" : "NHNTStream";
 	szSampleName = dims_doc ? "DIMSUnit" : "NHNTSample";
+	szSubSampleName = dims_doc ? "DIMSSubUnit" : "NHNTSubSample";
 	szImpName = dims_doc ? "DIMS" : "NHML";
 
 	if (import->flags & GF_IMPORT_PROBE_ONLY) {
@@ -3239,6 +3240,8 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 			NHML_SCAN_INT("%u", dts_inc)
 		} else if (!stricmp(att->name, "gzipSamples")) {
 			do_compress = (!stricmp(att->value, "yes")) ? GF_TRUE : GF_FALSE;
+		} else if (!stricmp(att->name, "auxiliaryMimeTypes")) {
+			auxiliary_mime_types = gf_strdup(att->name);
 		}
 #ifndef GPAC_DISABLE_ZLIB
 		else if (!stricmp(att->name, "gzipDictionary")) {
@@ -3261,7 +3264,7 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 			use_dict = GF_TRUE;
 		}
 #endif
-		/*unknow desc related*/
+		/*unknown desc related*/
 		else if (!stricmp(att->name, "compressorName")) {
 			strcpy(sdesc.compressor_name, att->value);
 		} else if (!stricmp(att->name, "codecVersion")) {
@@ -3492,9 +3495,9 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 			e = gf_isom_last_error(import->dest);
 			goto exit;
 		}
-		if(sdesc.codec_tag == GF_ISOM_SUBTYPE_STPP) {
+		if (sdesc.codec_tag == GF_ISOM_SUBTYPE_STPP) {
 			e = gf_isom_new_xml_subtitle_description(import->dest, track,
-			        dims.mime_type, dims.xml_schema_loc, NULL,
+			        dims.mime_type, dims.xml_schema_loc, auxiliary_mime_types,
 			        &di);
 		} else if (sdesc.codec_tag == GF_ISOM_SUBTYPE_SBTT) {
 			e = gf_isom_new_stxt_description(import->dest, track, GF_ISOM_SUBTYPE_SBTT,
@@ -3590,7 +3593,7 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 		strcpy(szXmlFrom, "");
 		strcpy(szXmlTo, "");
 
-		/*by default handle all samples as contigous*/
+		/*by default handle all samples as contiguous*/
 		offset = 0;
 		samp->dataLength = 0;
 		dims_flags = 0;
@@ -3661,9 +3664,10 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 		j=0;
 		while ((childnode = (GF_XMLNode *) gf_list_enum(node->content, &j))) {
 			if (childnode->type) continue;
-			if (stricmp(childnode->name, "BS") ) continue;
-			has_subbs = GF_TRUE;
-			break;
+			if (!stricmp(childnode->name, "BS")) {
+				has_subbs = GF_TRUE;
+				break;
+			}
 		}
 
 
@@ -3714,61 +3718,79 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 				samp->dataLength = gf_base64_decode(start, len, samp->data, len);
 			}
 		} else {
-			Bool close = GF_FALSE;
+			Bool close = GF_FALSE, has_subsamples = GF_FALSE;
 			FILE *f = mdia;
+
+			j = 0;
+			while ((childnode = (GF_XMLNode *)gf_list_enum(node->content, &j))) {
+				if (childnode->type) continue;
+				if (!stricmp(childnode->name, szSubSampleName)) {
+					has_subsamples = GF_TRUE;
+					break;
+				}
+			}
+			//JLF: not sure why this test is here, it could be usefull to describe subsamples but using data source
+			//from sample or baseMediaFile ...
+			if (has_subsamples && (mdia != NULL) ) {
+				e = gf_import_message(import, GF_BAD_PARAM, "%s import failure: you shall have either mediaFile (sample) or subsamples. Aborting.", szImpName);
+				goto exit;
+			}
+
 			if (strlen(szMediaTemp)) {
 				f = gf_fopen(szMediaTemp, "rb");
+				if (!f) {
+					e = gf_import_message(import, GF_BAD_PARAM, "%s import failure: file %s not found", szImpName, close ? szMediaTemp : szMedia);
+					goto exit;
+				}
 				close = GF_TRUE;
 				if (offset) gf_fseek(f, offset, SEEK_SET);
 			} else {
 				if (!offset) offset = media_done;
 			}
-			if (!f) {
-				e = gf_import_message(import, GF_BAD_PARAM, "%s import failure: file %s not found", szImpName, close ? szMediaTemp : szMedia);
-				goto exit;
-			}
 
-			if (!samp->dataLength) {
-				u64 cur_pos = gf_ftell(f);
-				gf_fseek(f, 0, SEEK_END);
-				assert(gf_ftell(f) < 1<<31);
-				samp->dataLength = (u32) gf_ftell(f);
-				gf_fseek(f, cur_pos, SEEK_SET);
-			}
+			if (f) {
+				if (!samp->dataLength) {
+					//u64 cur_pos = gf_ftell(f);
+					gf_fseek(f, 0, SEEK_END);
+					assert(gf_ftell(f) < 1<<31);
+					samp->dataLength = (u32) gf_ftell(f);
+					//not needed, seek override below : gf_fseek(f, cur_pos, SEEK_SET);
+				}
+				gf_fseek(f, offset, SEEK_SET);
 
-			gf_fseek(f, offset, SEEK_SET);
-			if (is_dims) {
-				u32 read;
-				GF_BitStream *bs;
-				if (samp->dataLength+3>max_size) {
-					samp->data = (char*)gf_realloc(samp->data, sizeof(char) * (samp->dataLength+3));
-					max_size = samp->dataLength+3;
-				}
-				bs = gf_bs_new(samp->data, samp->dataLength+3, GF_BITSTREAM_WRITE);
-				gf_bs_write_u16(bs, samp->dataLength+1);
-				gf_bs_write_u8(bs, (u8) dims_flags);
-				read = (u32) fread( samp->data+3, sizeof(char), samp->dataLength, f);
-				if (samp->dataLength != read) {
-					GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[NHML import dims] Failed to fully read sample: dataLength %d read %d\n", samp->dataLength, read));
-				}
-				gf_bs_del(bs);
-				samp->dataLength+=3;
+				if (is_dims) {
+					u32 read;
+					GF_BitStream *bs;
+					if (samp->dataLength+3>max_size) {
+						samp->data = (char*)gf_realloc(samp->data, sizeof(char) * (samp->dataLength+3));
+						max_size = samp->dataLength+3;
+					}
+					bs = gf_bs_new(samp->data, samp->dataLength+3, GF_BITSTREAM_WRITE);
+					gf_bs_write_u16(bs, samp->dataLength+1);
+					gf_bs_write_u8(bs, (u8) dims_flags);
+					read = (u32) fread( samp->data+3, sizeof(char), samp->dataLength, f);
+					if (samp->dataLength != read) {
+						GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[NHML import dims] Failed to fully read sample: dataLength %d read %d\n", samp->dataLength, read));
+					}
+					gf_bs_del(bs);
+					samp->dataLength+=3;
 
-				/*same DIMS unit*/
-				if (gf_isom_get_sample_from_dts(import->dest, track, samp->DTS))
-					append = GF_TRUE;
-			} else {
-				u32 read;
-				if (samp->dataLength>max_size) {
-					samp->data = (char*)gf_realloc(samp->data, sizeof(char) * samp->dataLength);
-					max_size = samp->dataLength;
+					/*same DIMS unit*/
+					if (gf_isom_get_sample_from_dts(import->dest, track, samp->DTS))
+						append = GF_TRUE;
+				} else {
+					u32 read;
+					if (samp->dataLength>max_size) {
+						samp->data = (char*)gf_realloc(samp->data, sizeof(char) * samp->dataLength);
+						max_size = samp->dataLength;
+					}
+					read = (u32) fread(samp->data, sizeof(char), samp->dataLength, f);
+					if (samp->dataLength != read) {
+						GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[NHML import] Failed to fully read sample: dataLength %d read %d\n", samp->dataLength, read));
+					}
 				}
-				read = (u32) fread( samp->data, sizeof(char), samp->dataLength, f);
-				if (samp->dataLength != read) {
-					GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[NHML import] Failed to fully read sample: dataLength %d read %d\n", samp->dataLength, read));
-				}
+				if (close) gf_fclose(f);
 			}
-			if (close) gf_fclose(f);
 		}
 		if (e) goto exit;
 
@@ -3805,8 +3827,52 @@ GF_Err gf_import_nhml_dims(GF_MediaImporter *import, Bool dims_doc)
 			e = gf_isom_append_sample_data(import->dest, track, samp->data, samp->dataLength);
 		} else {
 			e = gf_isom_add_sample(import->dest, track, di, samp);
+			if (e) goto exit;
+
+			j = 0;
+			while ((childnode = (GF_XMLNode *)gf_list_enum(node->content, &j))) {
+				if (childnode->type) continue;
+				if (!stricmp(childnode->name, szSubSampleName)) {
+					u32 k = 0;
+					while ((att = (GF_XMLAttribute *)gf_list_enum(childnode->attributes, &k))) {
+						if (!stricmp(att->name, "mediaFile")) {
+							u32 subsMediaFileSize = 0;
+							char *subsMediaFileData = NULL;
+							char *sub_file_url = gf_url_concatenate(import->in_name, att->value);
+							FILE *f = sub_file_url ? gf_fopen(sub_file_url, "rb") : NULL;
+							if (sub_file_url) gf_free(sub_file_url);
+
+							if (!f) {
+								GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("Error: mediaFile \"%s\" not found for subsample. Abort.\n", att->value));
+								e = GF_BAD_PARAM;
+								goto exit;
+							}
+							gf_fseek(f, 0, SEEK_END);
+							assert(gf_ftell(f) < (1 << 31));
+							subsMediaFileSize = (u32)gf_ftell(f);
+							subsMediaFileData = gf_malloc(subsMediaFileSize);
+							gf_fseek(f, 0, SEEK_SET);
+							gf_fread(subsMediaFileData, 1, subsMediaFileSize, f);
+							gf_fclose(f);
+							e = gf_isom_add_subsample(import->dest, track, gf_isom_get_sample_count(import->dest, track), 0, subsMediaFileSize, 0, 0, GF_FALSE);
+							if (e) {
+								GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("Error: couldn't add subsample (mediaFile=\"%s\", size=%u. Abort.\n", att->value, subsMediaFileSize));
+								gf_free(subsMediaFileData);
+								goto exit;
+							}
+							e = gf_isom_append_sample_data(import->dest, track, subsMediaFileData, subsMediaFileSize);
+							if (e) {
+								GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("Error: couldn't append subsample data (mediaFile=\"%s\", size=%u. Abort.\n", att->value, subsMediaFileSize));
+								gf_free(subsMediaFileData);
+								goto exit;
+							}
+							gf_free(subsMediaFileData);
+						}
+					}
+				}
+			}
 		}
-		if (e) goto exit;
+
 		samp->IsRAP = RAP_NO;
 		samp->CTS_Offset = 0;
 		if (sample_duration)
@@ -3842,6 +3908,7 @@ exit:
 	gf_xml_dom_del(parser);
 	if (specInfo) gf_free(specInfo);
 	if (dictionary) gf_free(dictionary);
+	if (auxiliary_mime_types) gf_free(auxiliary_mime_types);
 	return e;
 }
 
@@ -5110,13 +5177,13 @@ restart_import:
 
 				if (set_subsamples) {
 					/* determine the number of subsamples */
-					nb_subs = gf_isom_sample_has_subsamples(import->dest, track, cur_samp+1);
+					nb_subs = gf_isom_sample_has_subsamples(import->dest, track, cur_samp+1, 0);
 					if (nb_subs) {
 						/* fetch size, priority, reserved and discardable info for last subsample */
-						gf_isom_sample_get_subsample(import->dest, track, cur_samp+1, nb_subs, &size, &priority, &reserved, &discardable);
+						gf_isom_sample_get_subsample(import->dest, track, cur_samp+1, 0, nb_subs, &size, &priority, &reserved, &discardable);
 
 						/*remove last subsample entry!*/
-						gf_isom_add_subsample(import->dest, track, cur_samp+1, 0, 0, 0, GF_FALSE);
+						gf_isom_add_subsample(import->dest, track, cur_samp+1, 0, 0, 0, 0, GF_FALSE);
 					}
 				}
 
@@ -5126,7 +5193,7 @@ restart_import:
 
 				if (set_subsamples) {
 					/*add subsample entry to next sample*/
-					gf_isom_add_subsample(import->dest, track, cur_samp+2, size_length/8 + prev_nalu_prefix_size, priority, reserved, discardable);
+					gf_isom_add_subsample(import->dest, track, cur_samp+2, 0, size_length/8 + prev_nalu_prefix_size, priority, reserved, discardable);
 				}
 
 				prev_nalu_prefix_size = 0;
@@ -5225,7 +5292,7 @@ restart_import:
 				prio = (63 - (p[1] & 0x3F)) << 2;
 
 				if (set_subsamples) {
-					gf_isom_add_subsample(import->dest, track, cur_samp+1, copy_size+size_length/8, prio, res, GF_TRUE);
+					gf_isom_add_subsample(import->dest, track, cur_samp+1, 0, copy_size+size_length/8, prio, res, GF_TRUE);
 				}
 
 				if (nal_type==GF_AVC_NALU_SVC_PREFIX_NALU) {
@@ -5235,7 +5302,7 @@ restart_import:
 				}
 			} else if (set_subsamples) {
 				/* use the res and priority value of last prefix NALU */
-				gf_isom_add_subsample(import->dest, track, cur_samp+1, copy_size+size_length/8, priority_prev_nalu_prefix, res_prev_nalu_prefix, GF_FALSE);
+				gf_isom_add_subsample(import->dest, track, cur_samp+1, 0, copy_size+size_length/8, priority_prev_nalu_prefix, res_prev_nalu_prefix, GF_FALSE);
 			}
 			if (nal_type!=GF_AVC_NALU_SVC_PREFIX_NALU) {
 				res_prev_nalu_prefix = 0;
@@ -6220,12 +6287,15 @@ restart_import:
 
 			break;
 		case GF_HEVC_NALU_SEI_SUFFIX:
-			if (!layer_id) flush_next_sample = GF_TRUE;
 			if (import->flags & GF_IMPORT_NO_SEI) {
 					copy_size = 0;
 			} else {
 				if (hevc.sps_active_idx != -1) {
 					copy_size = nal_size;
+					if (!layer_id) {
+						if (!is_empty_sample) flush_next_sample = GF_TRUE;
+						else copy_size = 0;
+					}
 					if (copy_size)
 						nb_sei++;
 				}
@@ -6413,7 +6483,7 @@ restart_import:
 
 			if (set_subsamples) {
 				/* use the res and priority value of last prefix NALU */
-				gf_isom_add_subsample(import->dest, track, cur_samp+1, copy_size+size_length/8, 0, 0, GF_FALSE);
+				gf_isom_add_subsample(import->dest, track, cur_samp+1, 0, copy_size+size_length/8, 0, 0, GF_FALSE);
 			}
 
 			if (has_vcl_nal) {

@@ -2717,6 +2717,11 @@ static u32 hevc_get_tile_id(HEVCState *hevc, u32 *tile_x, u32 *tile_y, u32 *tile
 	*tile_width = *tile_width * si->sps->max_CU_width;
 	*tile_height = *tile_height * si->sps->max_CU_width;
 
+	if (*tile_x + *tile_width > si->sps->width)
+		*tile_width = si->sps->width - *tile_x;
+	if (*tile_y + *tile_height > si->sps->height)
+		*tile_height = si->sps->height - *tile_y;
+
 	return tileX + tileY * si->pps->num_tile_columns;
 }
 
@@ -3087,7 +3092,7 @@ GF_Err gf_media_split_hevc_tiles(GF_ISOFile *file, u32 signal_mode)
 err_exit:
 	gf_free(tiles);
 	if (e) {
-		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[ISOBMF] Couldnot split HEVC tiles into tracks: %s\n", gf_error_to_string(e) ));
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[ISOBMF] Could not split HEVC tiles into tracks: %s\n", gf_error_to_string(e) ));
 	}
 	return e;
 #endif

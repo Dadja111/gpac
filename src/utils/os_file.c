@@ -209,6 +209,17 @@ extern char **environ;
 #endif
 
 GF_EXPORT
+Bool gf_file_exists(const char *fileName)
+{
+	FILE *f = gf_fopen(fileName, "r");
+	if (f) {
+		gf_fclose(f);
+		return GF_TRUE;
+	}
+	return GF_FALSE;
+}
+
+GF_EXPORT
 GF_Err gf_move_file(const char *fileName, const char *newFileName)
 {
 #if defined(_WIN32_WCE)
@@ -242,7 +253,7 @@ GF_Err gf_move_file(const char *fileName, const char *newFileName)
 #else
 	e = (system(cmd) == 0) ? GF_OK : GF_IO_ERR;
 #endif
-	
+
 error:
 	gf_free(arg1);
 	gf_free(arg2);
@@ -720,6 +731,11 @@ s32 gf_fclose(FILE *file)
 #endif
 
 GF_EXPORT
+size_t gf_fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+	return fread(ptr, size, nmemb, stream);
+}
+
+GF_EXPORT
 size_t gf_fwrite(const void *ptr, size_t size, size_t nmemb,
                  FILE *stream)
 {
@@ -753,3 +769,35 @@ size_t gf_fwrite(const void *ptr, size_t size, size_t nmemb,
 	return result;
 }
 
+
+/**
+  * Returns a pointer to the start of a filepath extension or null
+ **/
+GF_EXPORT
+char* gf_file_ext_start(const char* filename)
+{
+	char* res = NULL;
+	if (filename) {
+
+		const char* lastPathPart = strrchr(filename , GF_PATH_SEPARATOR);
+		if (GF_PATH_SEPARATOR != '/')
+		{
+			// windows paths can mix slashes and backslashes
+			// so we search for the last slash that occurs after the last backslash
+			// if it occurs before it's not relevant
+			// if there's no backslashes we search in the whole file path
+
+			const char* trailingSlash = strrchr(lastPathPart?lastPathPart:filename, '/');
+			if (trailingSlash)
+				lastPathPart = trailingSlash;
+		}
+		if (!lastPathPart)
+			lastPathPart = filename;
+		else
+			lastPathPart++;
+
+		res = strrchr(lastPathPart, '.');
+
+	}
+	return res;
+}

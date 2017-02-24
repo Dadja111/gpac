@@ -1787,8 +1787,10 @@ void gf_odm_play(GF_ObjectManager *odm)
 		media_control_paused = 1;
 	}
 
-	if (odm->term->root_scene && odm->term->root_scene->pause_at_first_frame) {
-		media_control_paused = GF_TRUE;
+	if (odm->term->root_scene) {
+		if (odm->term->root_scene->first_frame_pause_type) {
+			media_control_paused = GF_TRUE;
+		}
 	}
 
 	if ((odm->codec || odm->subscene) && media_control_paused) {
@@ -2121,7 +2123,7 @@ void gf_odm_pause(GF_ObjectManager *odm)
 		gf_codec_set_status(odm->codec, GF_ESM_CODEC_PAUSE);
 	}
 	//when pause_at_first_frame is set we still want to decode and process the first AUs in OD and scene channels, otherwise no scene and no frame to display ...
-	else if (odm->subscene && ! odm->subscene->pause_at_first_frame) {
+	else if (odm->subscene && (odm->subscene->first_frame_pause_type==0) ) {
 		if (odm->subscene->scene_codec) {
 			gf_codec_set_status(odm->subscene->scene_codec, GF_ESM_CODEC_PAUSE);
 			gf_term_stop_codec(odm->subscene->scene_codec, 1);
@@ -2144,8 +2146,17 @@ void gf_odm_pause(GF_ObjectManager *odm)
 
 		if (odm->state != GF_ODM_STATE_PLAY) continue;
 
-		com.base.on_channel = ch;
-		gf_term_service_command(ch->service, &com);
+		//if we are in dump mode, the clocks are paused (step-by-step render), but we don't send the pause commands to
+		//the network !
+		if (odm->term->root_scene->first_frame_pause_type!=2) {
+			com.base.on_channel = ch;
+			gf_term_service_command(ch->service, &com);
+		}
+	}
+
+	//if we are in dump mode, only the clocks are paused (step-by-step render), the media object is still in play state
+	if (odm->term->root_scene->first_frame_pause_type==2) {
+		return;
 	}
 
 #ifndef GPAC_DISABLE_VRML

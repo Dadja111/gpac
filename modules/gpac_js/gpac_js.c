@@ -511,7 +511,9 @@ case GJS_GPAC_PROP_SENSORS_ACTIVE:
 	evt.type = GF_EVENT_SENSOR_REQUEST;
 	evt.activate_sensor.activate = term->orientation_sensors_active;
 	evt.activate_sensor.sensor_type = GF_EVENT_SENSOR_ORIENTATION;
-	gf_term_send_event(term, &evt);
+	if (gf_term_send_event(term, &evt) == GF_FALSE) {
+		term->orientation_sensors_active = GF_FALSE;
+	}
 }
 	break;
 }
@@ -1086,7 +1088,7 @@ case GJS_OM_PROP_TYPE:
 	else if (odi.od_type==GF_STREAM_AUDIO) str = "Audio";
 	else if (odi.od_type==GF_STREAM_TEXT) str = "Text";
 	else if (odm->subscene) str = "Subscene";
-	else str = "Unknow";
+	else str = "Unknown";
 	*vp = STRING_TO_JSVAL(JS_NewStringCopyZ(c, str));
 	break;
 case GJS_OM_PROP_SAMPLERATE:

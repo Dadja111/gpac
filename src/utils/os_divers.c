@@ -467,7 +467,12 @@ Bool gf_prompt_has_input()
 {
 	u8 ch;
 	s32 nread;
+	pid_t fg = tcgetpgrp(STDIN_FILENO);
 
+	//we are not foreground nor piped (used for IDEs), can't read stdin
+	if ((fg!=-1) && (fg != getpgrp())) {
+		return 0;
+	}
 	init_keyboard();
 	if (ch_peek != -1) return 1;
 	t_new.c_cc[VMIN]=0;
@@ -1031,7 +1036,9 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 
 		/*rough values*/
 		the_rti.cpu_idle_time = the_rti.sampling_period_duration - the_rti.total_cpu_time_diff;
+		if (!the_rti.sampling_period_duration) the_rti.sampling_period_duration=1;
 		the_rti.total_cpu_usage = (u32) (100 * the_rti.total_cpu_time_diff / the_rti.sampling_period_duration);
+		if (the_rti.total_cpu_time_diff + the_rti.cpu_idle_time==0) the_rti.total_cpu_time_diff ++;
 		the_rti.process_cpu_usage = (u32) (100*the_rti.process_cpu_time_diff / (the_rti.total_cpu_time_diff + the_rti.cpu_idle_time) );
 
 #else
@@ -1671,10 +1678,15 @@ void gf_net_get_ntp(u32 *sec, u32 *frac)
 	u64 frac_part;
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	*sec = (u32) (now.tv_sec) + ntp_shift;
-	frac_part = now.tv_usec * 0xFFFFFFFFULL;
-	frac_part /= 1000000;
-	*frac = (u32) ( frac_part );
+	if (sec) {
+		*sec = (u32) (now.tv_sec) + ntp_shift;
+	}
+	
+	if (frac) {
+		frac_part = now.tv_usec * 0xFFFFFFFFULL;
+		frac_part /= 1000000;
+		*frac = (u32) ( frac_part );
+	}
 }
 
 GF_EXPORT

@@ -450,7 +450,7 @@ static void gather_buffer_level(GF_ObjectManager *odm, GF_ClientService *service
 		if (ch->service != service) continue;
 		if (ch->es_state != GF_ESM_ES_RUNNING) continue;
 		if (com->base.on_channel && (com->base.on_channel != ch)) continue;
-		if (/*!ch->MaxBuffer || */ch->dispatch_after_db || ch->bypass_sl_and_db || ch->IsEndOfStream) continue;
+		if (ch->dispatch_after_db || ch->bypass_sl_and_db || ch->IsEndOfStream) continue;
 
 		//if not in hybrid mode, perform buffer management only on base layer  -this is because we don't signal which ESs are on/off in the underlying service ...
 		if (ch->esd->dependsOnESID) {
@@ -462,6 +462,7 @@ static void gather_buffer_level(GF_ObjectManager *odm, GF_ClientService *service
 
 		if (ch->MaxBuffer>com->buffer.max) com->buffer.max = ch->MaxBuffer;
 		if (ch->MinBuffer<com->buffer.min) com->buffer.min = ch->MinBuffer;
+		if (ch->MaxBufferOccupancy > com->buffer.max) com->buffer.max = ch->MaxBufferOccupancy;
 
 		if (ch->IsClockInit) {
 			s32 buf_time = (s32) (ch->BufferTime / FIX2FLT(ch->clock->speed) );
@@ -517,7 +518,7 @@ static void term_on_command(GF_ClientService *service, GF_NetworkCommand *com, G
 
 		max_buffer_time=0;
 		if (!gf_list_count(scene->resources)) {
-			GF_LOG(GF_LOG_WARNING, GF_LOG_MEDIA, ("[ODM] No object manager found for the scene (URL: %s), buffer occupancy will remain unchanged\n", service->url));
+			GF_LOG(GF_LOG_DEBUG, GF_LOG_MEDIA, ("[ODM] No object manager found for the scene (URL: %s), buffer occupancy will remain unchanged\n", service->url));
 		} else {
 			i=0;
 			while ((odm = (GF_ObjectManager*)gf_list_enum(scene->resources, &i))) {
@@ -527,9 +528,9 @@ static void term_on_command(GF_ClientService *service, GF_NetworkCommand *com, G
 		gf_mx_v(scene->mx_resources);
 		if (com->buffer.occupancy==(u32) -1) com->buffer.occupancy = 0;
 
-		//in bench mode return the 1 if one of the buffer is full (eg sleep until all buffers are not full), 0 otherwise
+		//in bench mode set occupancy to 0 only if we have less data than max buffer, otherwise wait
 		if (term->bench_mode) {
-			com->buffer.occupancy = (max_buffer_time>com->buffer.max) ? 2 : 0;
+			com->buffer.occupancy = (max_buffer_time < com->buffer.max) ? 0 : 2;
 			com->buffer.max = 1;
 			com->buffer.min = 0;
 		}

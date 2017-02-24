@@ -106,6 +106,16 @@ typedef struct
 	/*to be eventually completed by other vui members*/
 } AVC_VUI;
 
+typedef struct 
+{
+	u32 left;
+	u32 right;
+	u32 top;
+	u32 bottom;
+	
+} AVC_CROP;
+
+
 typedef struct
 {
 	s32 profile_idc;
@@ -126,6 +136,7 @@ typedef struct
 	u32 width, height;
 
 	AVC_VUI vui;
+	AVC_CROP crop;
 
 	/*used to discard repeated SPSs - 0: not parsed, 1 parsed, 2 sent*/
 	u32 state;
@@ -506,7 +517,7 @@ void gf_webvtt_sample_del(GF_WebVTTSample * samp);
 u64 gf_webvtt_sample_get_start(GF_WebVTTSample * samp);
 
 #ifndef GPAC_DISABLE_ISOM
-GF_Err gf_webvtt_dump_header(FILE *dump, GF_ISOFile *file, u32 track, u32 index);
+GF_Err gf_webvtt_dump_header(FILE *dump, GF_ISOFile *file, u32 track, Bool box_mode, u32 index);
 GF_Err gf_webvtt_dump_sample(FILE *dump, GF_WebVTTSample *samp);
 GF_Err gf_webvtt_parser_dump_done(GF_WebVTTParser *parser, u32 duration);
 #endif /* GPAC_DISABLE_ISOM */

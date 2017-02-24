@@ -113,18 +113,86 @@ enum
 	GF_ISOM_REF_OCR				= GF_4CC( 's', 'y', 'n', 'c' ),
 	/*ref type for IPI (Intellectual Property Information) dependencies*/
 	GF_ISOM_REF_IPI				= GF_4CC( 'i', 'p', 'i', 'r' ),
-	/*ref type for timed Meta Data tracks*/
+	/*this track describes the referenced tr*/
 	GF_ISOM_REF_META		= GF_4CC( 'c', 'd', 's', 'c' ),
 	/*ref type for Hint tracks*/
 	GF_ISOM_REF_HINT		= GF_4CC( 'h', 'i', 'n', 't' ),
 	/*ref type for QT Chapter tracks*/
 	GF_ISOM_REF_CHAP		= GF_4CC( 'c', 'h', 'a', 'p' ),
-	/*ref type for the SVC tracks*/
+	/*ref type for the SVC and SHVC tracks*/
 	GF_ISOM_REF_BASE = GF_4CC( 's', 'b', 'a', 's' ),
 	GF_ISOM_REF_SCAL = GF_4CC( 's', 'c', 'a', 'l' ),
 	GF_ISOM_REF_TBAS = GF_4CC( 't', 'b', 'a', 's' ),
 	GF_ISOM_REF_SABT = GF_4CC( 's', 'a', 'b', 't' ),
-	GF_ISOM_REF_OREF = GF_4CC( 'o', 'r', 'e', 'f' )
+	GF_ISOM_REF_OREF = GF_4CC( 'o', 'r', 'e', 'f' ),
+	//this track uses fonts carried/defined in the referenced track
+	GF_ISOM_REF_FONT = GF_4CC( 'f', 'o', 'n', 't' ),
+	//this track depends on the referenced hint track, i.e., it should only be used if the referenced hint track is used.
+	GF_ISOM_REF_HIND = GF_4CC( 'h', 'i', 'n', 'd' ),
+	//this track contains auxiliary depth video information for the referenced video track
+	GF_ISOM_REF_VDEP = GF_4CC( 'v', 'd', 'e', 'p' ),
+	//this track contains auxiliary parallax video information for the referenced video track
+	GF_ISOM_REF_VPLX = GF_4CC( 'v', 'p', 'l', 'x' ),
+	//this track contains subtitle, timed text or overlay graphical information for the referenced track or any track in the alternate group to which the track belongs, if any
+	GF_ISOM_REF_SUBT = GF_4CC( 's', 'u', 'b', 't' ),
+	//thumbail track
+	GF_ISOM_REF_THUMB = GF_4CC( 't', 'h', 'm', 'b' ),
+	/*DRC*/
+	//additionnal audio track
+	GF_ISOM_REF_ADDA			= GF_4CC( 'a', 'd', 'd', 'a' ),
+	//DRC metadata
+	GF_ISOM_REF_ADRC			= GF_4CC( 'a', 'd', 'r', 'c' ),
+	//item->track location
+	GF_ISOM_REF_ILOC			= GF_4CC( 'i', 'l', 'o', 'c' ),
+	//AVC dep stream
+	GF_ISOM_REF_AVCP			= GF_4CC( 'a', 'v', 'c', 'p' ),
+	//AVC switch to
+	GF_ISOM_REF_SWTO			= GF_4CC( 's', 'w', 't', 'o' ),
+	//AVC switch from
+	GF_ISOM_REF_SWFR			= GF_4CC( 's', 'w', 'f', 'r' ),
+
+	//Time code
+	GF_ISOM_REF_TMCD			= GF_4CC( 't', 'm', 'c', 'd' ),
+	//Structural dependency
+	GF_ISOM_REF_CDEP			= GF_4CC( 'c', 'd', 'e', 'p' ),
+	//transcript
+	GF_ISOM_REF_SCPT			= GF_4CC( 's', 'c', 'p', 't' ),
+	//nonprimary source description
+	GF_ISOM_REF_SSRC			= GF_4CC( 's', 's', 'r', 'c' ),
+	//layer audio track dependency 
+	GF_ISOM_REF_LYRA			= GF_4CC( 'l', 'y', 'r', 'a' ),
+
+};
+
+//defined sample groups in GPAC
+enum {
+	GF_ISOM_SAMPLE_GROUP_ROLL = GF_4CC( 'r', 'o', 'l', 'l'),
+	GF_ISOM_SAMPLE_GROUP_PROL = GF_4CC( 'p', 'r', 'o', 'l'),
+	GF_ISOM_SAMPLE_GROUP_RAP = GF_4CC( 'r', 'a', 'p', ' ' ),
+	GF_ISOM_SAMPLE_GROUP_SEIG = GF_4CC( 's', 'e', 'i', 'g' ),
+	GF_ISOM_SAMPLE_GROUP_OINF = GF_4CC( 'o', 'i', 'n', 'f'),
+	GF_ISOM_SAMPLE_GROUP_LINF = GF_4CC( 'l', 'i', 'n', 'f'),
+	GF_ISOM_SAMPLE_GROUP_TRIF = GF_4CC( 't', 'r', 'i', 'f' ),
+	GF_ISOM_SAMPLE_GROUP_NALM = GF_4CC( 'n', 'a', 'l', 'm'),
+	GF_ISOM_SAMPLE_GROUP_TELE = GF_4CC( 't', 'e', 'l', 'e'),
+	GF_ISOM_SAMPLE_GROUP_SAP = GF_4CC( 's', 'a', 'p', ' '),
+	GF_ISOM_SAMPLE_GROUP_ALST = GF_4CC( 'a', 'l', 's', 't'),
+	GF_ISOM_SAMPLE_GROUP_RASH = GF_4CC( 'r', 'a', 's', 'h'),
+
+	GF_ISOM_SAMPLE_GROUP_AVLL = GF_4CC( 'a', 'v', 'l', 'l'), //p15
+	GF_ISOM_SAMPLE_GROUP_AVSS = GF_4CC( 'a', 'v', 's', 's'), //p15
+	GF_ISOM_SAMPLE_GROUP_DTRT = GF_4CC( 'd', 't', 'r', 't'), //p15
+	GF_ISOM_SAMPLE_GROUP_MVIF = GF_4CC( 'm', 'v', 'i', 'f'), //p15
+	GF_ISOM_SAMPLE_GROUP_SCIF = GF_4CC( 's', 'c', 'i', 'f'), //p15
+	GF_ISOM_SAMPLE_GROUP_SCNM = GF_4CC( 's', 'c', 'n', 'm'), //p15
+	GF_ISOM_SAMPLE_GROUP_STSA = GF_4CC( 's', 't', 's', 'a'), //p15
+	GF_ISOM_SAMPLE_GROUP_TSAS = GF_4CC( 't', 's', 'a', 's'), //p15
+	GF_ISOM_SAMPLE_GROUP_SYNC = GF_4CC( 's', 'y', 'n', 'c'), //p15
+	GF_ISOM_SAMPLE_GROUP_TSCL = GF_4CC( 't', 's', 'c', 'l'), //p15
+	GF_ISOM_SAMPLE_GROUP_VIPR = GF_4CC( 'v', 'i', 'p', 'r'), //p15
+
+	GF_ISOM_SAMPLE_GROUP_3GAG = GF_4CC( '3', 'g', 'a', 'g'), //3gpp
+	GF_ISOM_SAMPLE_GROUP_AVCB = GF_4CC( 'a', 'v', 'c', 'b'), //3gpp
 };
 
 /*Track Edition flag*/
@@ -217,8 +285,6 @@ enum
 	GF_ISOM_SUBTYPE_HEV1			= GF_4CC( 'h', 'e', 'v', '1' ),
 	GF_ISOM_SUBTYPE_HVC2			= GF_4CC( 'h', 'v', 'c', '2' ),
 	GF_ISOM_SUBTYPE_HEV2			= GF_4CC( 'h', 'e', 'v', '2' ),
-	//GF_ISOM_SUBTYPE_SHC1			= GF_4CC( 's', 'h', 'c', '1' ),
-	//GF_ISOM_SUBTYPE_SHV1			= GF_4CC( 's', 'h', 'v', '1' ),
 	GF_ISOM_SUBTYPE_LHV1			= GF_4CC( 'l', 'h', 'v', '1' ),
 	GF_ISOM_SUBTYPE_LHE1			= GF_4CC( 'l', 'h', 'e', '1' ),
 	GF_ISOM_SUBTYPE_HVT1			= GF_4CC( 'h', 'v', 't', '1' ),
@@ -244,6 +310,15 @@ enum
 	GF_ISOM_SUBTYPE_SBTT		= GF_4CC( 's', 'b', 't', 't' ),
 	GF_ISOM_SUBTYPE_METT		= GF_4CC( 'm', 'e', 't', 't' ),
 	GF_ISOM_SUBTYPE_METX		= GF_4CC( 'm', 'e', 't', 'x' ),
+	GF_ISOM_SUBTYPE_TX3G		= GF_4CC( 't', 'x', '3', 'g' ),
+	GF_ISOM_SUBTYPE_TEXT		= GF_4CC( 't', 'e', 'x', 't' ),
+
+
+	GF_ISOM_SUBTYPE_RTP			= GF_4CC( 'r', 't', 'p', ' ' ),
+	GF_ISOM_SUBTYPE_SRTP		= GF_4CC( 's', 'r', 't', 'p' ),
+	GF_ISOM_SUBTYPE_RRTP		= GF_4CC( 'r', 'r', 't', 'p' ),
+	GF_ISOM_SUBTYPE_RTCP		= GF_4CC( 'r', 't', 'c', 'p' ),
+	GF_ISOM_SUBTYPE_FLUTE		= GF_4CC( 'f', 'd', 'p', ' ' ),
 };
 
 
@@ -303,7 +378,10 @@ enum
 	/* file complying to ISO/IEC 21000-9:2005 (MPEG-21 spec)*/
 	GF_ISOM_BRAND_MP21 = GF_4CC('m', 'p', '2', '1'),
 	/*file complying to the generic ISO Media File (base specification ISO/IEC 14496-12) + support for version 1*/
-	GF_ISOM_BRAND_ISO4 =  GF_4CC( 'i', 's', 'o', '4' )
+	GF_ISOM_BRAND_ISO4 =  GF_4CC( 'i', 's', 'o', '4' ),
+	/* Image File Format */
+	GF_ISOM_BRAND_MIF1 = GF_4CC('m', 'i', 'f', '1'),
+	GF_ISOM_BRAND_HEIC = GF_4CC('h', 'e', 'i', 'c'),
 };
 
 
@@ -507,7 +585,7 @@ u32 gf_isom_get_media_type(GF_ISOFile *the_file, u32 trackNumber);
 /*return the media type FOUR CHAR code type of the media*/
 u32 gf_isom_get_media_subtype(GF_ISOFile *the_file, u32 trackNumber, u32 DescriptionIndex);
 
-/*return the media type FOUR CHAR code type of an MPEG4 media (eg, mp4a, mp4v, enca, encv, etc...)
+/*return the media type FOUR CHAR code type of an MPEG4 media (eg, mp4a, mp4v, enca, encv, resv, etc...)
 returns 0 if not MPEG-4 subtype*/
 u32 gf_isom_get_mpeg4_subtype(GF_ISOFile *the_file, u32 trackNumber, u32 DescriptionIndex);
 
@@ -668,6 +746,10 @@ returns 2 if the track uses signed compositionTime offsets (B-frames or similar)
 returns 0 if the track does not use compositionTime offsets (CTS == DTS)
 */
 u32 gf_isom_has_time_offset(GF_ISOFile *the_file, u32 trackNumber);
+
+/*returns the shift from composition time to decode time for that track if indicated, or 0 if not found
+adding shift to CTS guarantees that the shifted CTS is always greater than the DTS for any sample*/
+s64 gf_isom_get_cts_to_dts_shift(GF_ISOFile *the_file, u32 trackNumber);
 
 /*returns 1 if the track has sync shadow samples*/
 Bool gf_isom_has_sync_shadows(GF_ISOFile *the_file, u32 trackNumber);
@@ -1122,6 +1204,8 @@ GF_Err gf_isom_set_track_layout_info(GF_ISOFile *the_file, u32 trackNumber, u32 
 GF_Err gf_isom_set_track_matrix(GF_ISOFile *the_file, u32 trackNumber, u32 matrix[9]);
 
 GF_Err gf_isom_set_pixel_aspect_ratio(GF_ISOFile *the_file, u32 trackNumber, u32 StreamDescriptionIndex, u32 hSpacing, u32 vSpacing);
+
+GF_Err gf_isom_set_clean_apperture(GF_ISOFile *movie, u32 trackNumber, u32 StreamDescriptionIndex, u32 cleanApertureWidthN, u32 cleanApertureWidthD, u32 cleanApertureHeightN, u32 cleanApertureHeightD, u32 horizOffN, u32 horizOffD, u32 vertOffN, u32 vertOffD);
 
 /*set SR & nbChans for audio description*/
 GF_Err gf_isom_set_audio_info(GF_ISOFile *the_file, u32 trackNumber, u32 StreamDescriptionIndex, u32 sampleRate, u32 nbChannels, u8 bitsPerSample);
@@ -1636,6 +1720,12 @@ GF_Err gf_isom_sdp_clean(GF_ISOFile *the_file);
 
 /*dumps file structures into XML trace file */
 GF_Err gf_isom_dump(GF_ISOFile *file, FILE *trace);
+/*gets number of implemented boxes in GPAC. There can be several times the same type returned due to variation of the box (versions or flags)*/
+u32 gf_isom_get_num_supported_boxes();
+/*gets 4cc of box given its index. Index 0 is GPAC internal unknown box handler.*/
+u32 gf_isom_get_supported_box_type(u32 idx);
+/*prints default box syntax of box given its index. Index 0 is GPAC internal unknown box handler*/
+GF_Err gf_isom_dump_supported_box(u32 idx, FILE * trace);
 
 #endif /*GPAC_DISABLE_ISOM_DUMP*/
 
@@ -1846,8 +1936,9 @@ GF_Err gf_isom_text_set_streaming_mode(GF_ISOFile *the_file, Bool do_convert);
 */
 typedef enum {
 	GF_TEXTDUMPTYPE_TTXT = 0,
-	GF_TEXTDUMPTYPE_SRT  = 1,
-	GF_TEXTDUMPTYPE_SVG  = 2,
+	GF_TEXTDUMPTYPE_TTXT_BOXES = 1,
+	GF_TEXTDUMPTYPE_SRT  = 2,
+	GF_TEXTDUMPTYPE_SVG  = 3,
 } GF_TextDumpType;
 GF_Err gf_isom_text_dump(GF_ISOFile *the_file, u32 track, FILE *dump, GF_TextDumpType dump_type);
 #endif
@@ -2225,32 +2316,41 @@ GF_Err gf_isom_set_meta_xml(GF_ISOFile *file, Bool root_meta, u32 track_num, cha
 /*set meta XML data from memory - erase any previously (Binary)XML info*/
 GF_Err gf_isom_set_meta_xml_memory(GF_ISOFile *file, Bool root_meta, u32 track_num, unsigned char *data, u32 data_size, Bool IsBinaryXML);
 
-/*adds item to meta:
-	@self_reference: indicates this item is the file itself
-	@resource_path: file to add - can be NULL when URL/URN is used
-	@item_name: item name - if NULL, use file name. CANNOT BE NULL if resource_path is not set
-	@item_id: item id - if 0, use the last item id + 1.
-	@mime_type: item mime type - if NULL, use "application/octet-stream"
-	@content_encoding: content encoding type - if NULL, none specified
-	@URL, @URN: if set, resource will be remote (same as stream descriptions)
-*/
+typedef enum {
+	TILE_ITEM_NONE = 0,
+	TILE_ITEM_ALL_NO_BASE,
+	TILE_ITEM_ALL_BASE,
+	TILE_ITEM_ALL_GRID,
+	TILE_ITEM_SINGLE
+} GF_TileItemMode;
+
 typedef struct
 {
 	u32 width, height;
 	u32 hSpacing, vSpacing;
 	u32 hOffset, vOffset;
 	u32 angle;
+	Bool hidden;
+	void *config;
+	GF_TileItemMode tile_mode; 
+	u32 single_tile_number;
 } GF_ImageItemProperties;
 
-GF_Err gf_isom_add_meta_item(GF_ISOFile *file, Bool root_meta, u32 track_num, Bool self_reference, char *resource_path, const char *item_name, u32 item_id, const char *mime_type, const char *content_encoding, const char *URL, const char *URN, GF_ImageItemProperties *imgprop);
+GF_Err gf_isom_meta_get_next_item_id(GF_ISOFile *file, Bool root_meta, u32 track_num, u32 *item_id);
+
+GF_Err gf_isom_add_meta_item(GF_ISOFile *file, Bool root_meta, u32 track_num, Bool self_reference, char *resource_path, const char *item_name, u32 item_id, u32 item_type, const char *mime_type, const char *content_encoding, const char *URL, const char *URN, GF_ImageItemProperties *imgprop);
 /*same as above excepts take the item directly in memory*/
-GF_Err gf_isom_add_meta_item_memory(GF_ISOFile *file, Bool root_meta, u32 track_num, const char *item_name, u32 item_id, const char *mime_type, const char *content_encoding, char *data, u32 data_len);
+GF_Err gf_isom_add_meta_item_memory(GF_ISOFile *file, Bool root_meta, u32 track_num, const char *item_name, u32 item_id, u32 item_type, const char *mime_type, const char *content_encoding, GF_ImageItemProperties *image_props, char *data, u32 data_len, GF_List *item_extent_refs);
+
+GF_Err gf_isom_iff_create_image_item_from_track(GF_ISOFile *movie, Bool root_meta, u32 meta_track_number, u32 track, const char *item_name, u32 item_id, GF_ImageItemProperties *image_props, GF_List *item_extent_refs);
 
 /*removes item from meta*/
 GF_Err gf_isom_remove_meta_item(GF_ISOFile *file, Bool root_meta, u32 track_num, u32 item_num);
 
 /*sets the given item as the primary one. You SHALL NOT use this if the meta has a valid XML data*/
 GF_Err gf_isom_set_meta_primary_item(GF_ISOFile *file, Bool root_meta, u32 track_num, u32 item_num);
+
+GF_Err gf_isom_meta_add_item_ref(GF_ISOFile *file, Bool root_meta, u32 trackID, u32 from_id, u32 to_id, u32 type, u64 *ref_index);
 
 #endif /*GPAC_DISABLE_ISOM_WRITE*/
 
@@ -2404,17 +2504,17 @@ GF_Err gf_isom_ac3_config_new(GF_ISOFile *the_file, u32 trackNumber, GF_AC3Confi
 
 
 
-/*returns the number of subsamples in the given sample */
-u32 gf_isom_sample_has_subsamples(GF_ISOFile *movie, u32 track, u32 sampleNumber);
-GF_Err gf_isom_sample_get_subsample(GF_ISOFile *movie, u32 track, u32 sampleNumber, u32 subSampleNumber, u32 *size, u8 *priority, u32 *reserved, Bool *discardable);
+/*returns the number of subsamples in the given sample for the given flags*/
+u32 gf_isom_sample_has_subsamples(GF_ISOFile *movie, u32 track, u32 sampleNumber, u32 flags);
+GF_Err gf_isom_sample_get_subsample(GF_ISOFile *movie, u32 track, u32 sampleNumber, u32 flags, u32 subSampleNumber, u32 *size, u8 *priority, u32 *reserved, Bool *discardable);
 #ifndef GPAC_DISABLE_ISOM_WRITE
 /*adds subsample information to a given sample. Subsample information shall be added in increasing order of sampleNumbers, insertion of information is not supported.
 Note that you may add subsample information for samples not yet added to the file
 specifying 0 as subSampleSize will remove the last subsample information if any*/
-GF_Err gf_isom_add_subsample(GF_ISOFile *movie, u32 track, u32 sampleNumber, u32 subSampleSize, u8 priority, u32 reserved, Bool discardable);
+GF_Err gf_isom_add_subsample(GF_ISOFile *movie, u32 track, u32 sampleNumber, u32 flags, u32 subSampleSize, u8 priority, u32 reserved, Bool discardable);
 #endif
 /*add subsample information for the latest sample added to the current track fragment*/
-GF_Err gf_isom_fragment_add_subsample(GF_ISOFile *movie, u32 TrackID, u32 subSampleSize, u8 priority, u32 reserved, Bool discardable);
+GF_Err gf_isom_fragment_add_subsample(GF_ISOFile *movie, u32 TrackID, u32 flags, u32 subSampleSize, u8 priority, u32 reserved, Bool discardable);
 
 /*copy over the subsample and sampleToGroup information of the given sample from the source track/file to the last sample added to the current track fragment of the destination file*/
 GF_Err gf_isom_fragment_copy_subsample(GF_ISOFile *dest, u32 TrackID, GF_ISOFile *orig, u32 track, u32 sampleNumber, Bool sgpd_in_traf);
