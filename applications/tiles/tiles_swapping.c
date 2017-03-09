@@ -91,26 +91,94 @@ void bs_set_ue(GF_BitStream *bs,s32 num)
     	gf_bs_write_int(bs, num, (length+1) >> 1);
 }
 
-/*u32 get_slice_segment_header_length(GF_BitStream *bs, HEVCState *hevc)
+static u32 avc_add_emulation_bytes(const char *buffer_src, char *buffer_dst, u32 nal_size)
 {
-	HEVCSliceInfo si;
-	u32 header_length = hevc_parse_slice_segment(bs, hevc, &si)
-	
-}*/
+
+	u32 i = 0, emulation_bytes_count = 0;
+	u8 num_zero = 0;
+
+	while (i < nal_size) {
+		/*ISO 14496-10: "Within the NAL unit, any four-byte sequence that starts with 0x000003
+		other than the following sequences shall not occur at any byte-aligned position:
+		0x00000300
+		0x00000301
+		0x00000302
+		0x00000303"
+		*/
+		if (num_zero == 2 && buffer_src[i] < 0x04) {
+			/*add emulation code*/
+			num_zero = 0;
+			buffer_dst[i+emulation_bytes_count] = 0x03;
+			emulation_bytes_count++;
+			if (!buffer_src[i])
+				num_zero = 1;
+		} else {
+			if (!buffer_src[i])
+				num_zero++;
+			else
+				num_zero = 0;
+		}
+		buffer_dst[i+emulation_bytes_count] = buffer_src[i];
+		i++;
+	}
+	return nal_size+emulation_bytes_count;
+}
+
+static u32 avc_remove_emulation_bytes(const char *buffer_src, char *buffer_dst, u32 nal_size)
+{
+	u32 i = 0, emulation_bytes_count = 0;
+	u8 num_zero = 0;
+
+	while (i < nal_size)
+	{
+		/*ISO 14496-10: "Within the NAL unit, any four-byte sequence that starts with 0x000003
+		  other than the following sequences shall not occur at any byte-aligned position:
+		  0x00000300
+		  0x00000301
+		  0x00000302
+		  0x00000303"
+		*/
+		if (num_zero == 2
+		        && buffer_src[i] == 0x03
+		        && i+1 < nal_size /*next byte is readable*/
+		        && buffer_src[i+1] < 0x04)
+		{
+			/*emulation code found*/
+			num_zero = 0;
+			emulation_bytes_count++;
+			i++;
+		}
+
+		buffer_dst[i-emulation_bytes_count] = buffer_src[i];
+
+		if (!buffer_src[i])
+			num_zero++;
+		else
+			num_zero = 0;
+
+		i++;
+	}
+
+	return nal_size-emulation_bytes_count;
+}
 
 
 
 void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length, char **out_slice, u32 *out_slice_length, HEVCState* hevc) 
 {
-	GF_BitStream *bs_ori = gf_bs_new(in_slice, in_slice_length, GF_BITSTREAM_READ);
+	char *in_slice_without_emulation_bytes;
+	char *out_slice_without_emulation_bytes;
+	in_slice_without_emulation_bytes = malloc(sizeof(char)*in_slice_length);
+	avc_remove_emulation_bytes(in_slice, in_slice_without_emulation_bytes, in_slice_length);
+	GF_BitStream *bs_ori = gf_bs_new(in_slice_without_emulation_bytes, in_slice_length, GF_BITSTREAM_READ);
+	//GF_BitStream *bs_ori = gf_bs_new(in_slice, in_slice_length, GF_BITSTREAM_READ);
 	GF_BitStream *bs_rw = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
 	u32 first_slice_segment_in_pic_flag;
 	u32 dependent_slice_segment_flag;
 	int address_ori;
 
 	gf_bs_skip_bytes(bs_ori, 2);
-	HEVCSliceInfo si;
-	hevc_parse_slice_segment(bs_ori, hevc, &si);
+	hevc_parse_slice_segment(bs_ori, hevc, hevc->s_info);
 	u32 header_end = (gf_bs_get_position(bs_ori)-1)*8+gf_bs_get_bit_position(bs_ori);
 
 	gf_bs_seek(bs_ori, 0);
@@ -165,27 +233,31 @@ void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length,
 	}
 	else; //new_address = 0
 	
-	printf("ori_pos:%llu   rw_pos:%llu\n", gf_bs_get_position(bs_ori)*8+gf_bs_get_bit_position(bs_ori), gf_bs_get_position(bs_rw)*8+gf_bs_get_bit_position(bs_rw));
+	//printf("ori_pos:%llu   rw_pos:%llu\n", gf_bs_get_position(bs_ori)*8+gf_bs_get_bit_position(bs_ori), gf_bs_get_position(bs_rw)*8+gf_bs_get_bit_position(bs_rw));
 	
 
 	while (header_end != (gf_bs_get_position(bs_ori)-1)*8+gf_bs_get_bit_position(bs_ori)) //Copy till the end of the header
 	{
 		gf_bs_write_int(bs_rw, gf_bs_read_int(bs_ori, 1), 1);
+		//printf("bit pos:%d\t",gf_bs_get_bit_position(bs_ori));
 	}	
-	//if (nal_unit_type == 1)
-	//	printf("address pos:%llu\n", gf_bs_get_position(bs_rw)*8+gf_bs_get_bit_position(bs_rw));
+	
 	gf_bs_align(bs_rw);					//align
 	gf_bs_align(bs_ori);     				//skip the padding 0s in original bitstream
-	//printf("in_type:%d add:%d hd:%d\n",nal_unit_type,new_address,header_end);
+	//printf("in_type:%d rw_address:%d header_end:%d\n",nal_unit_type,new_address,header_end);
 
-	while (gf_bs_get_size(bs_ori)*8 != (gf_bs_get_position(bs_ori)-1)*8+gf_bs_get_bit_position(bs_ori)) //Rest contents copying
+	//u32 rest_content_length = gf_bs_get_size(bs_ori)-gf_bs_get_position(bs_ori);
+	//gf_bs_write_int(bs_rw, gf_bs_read_int(bs_ori, rest_content_length), rest_content_length);
+
+	while (gf_bs_get_size(bs_ori) != gf_bs_get_position(bs_ori)) //Rest contents copying
 	{
 		//printf("size: %llu %llu\n", gf_bs_get_size(bs_ori)*8, (gf_bs_get_position(bs_ori)-1)*8+gf_bs_get_bit_position(bs_ori));
-		gf_bs_write_int(bs_rw, gf_bs_read_int(bs_ori, 1), 1);
+		gf_bs_write_int(bs_rw, gf_bs_read_int(bs_ori, 8), 8);
 	}
 	
 	
-
+		
+	
 	//gf_bs_align(bs_rw);						//align
 	gf_bs_truncate(bs_rw);
 	//printf("input bs size: %llu\n", gf_bs_get_size(bs_ori));
@@ -193,8 +265,15 @@ void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length,
 	//printf("input pos:%lld\n", (gf_bs_get_position(bs_ori)-1)*8+gf_bs_get_bit_position(bs_ori));
 	//printf("output pos:%lld\n", (gf_bs_get_position(bs_rw)-1)*8+gf_bs_get_bit_position(bs_rw));
 	*out_slice_length = 0;
-	*out_slice = NULL;
-	gf_bs_get_content(bs_rw, out_slice, out_slice_length);
+	//*out_slice = NULL;
+	out_slice_without_emulation_bytes = NULL;
+	//gf_bs_get_content(bs_rw, out_slice, out_slice_length);
+	gf_bs_get_content(bs_rw, &out_slice_without_emulation_bytes, out_slice_length);
+	*out_slice = malloc(sizeof(char)*(*out_slice_length));
+	//printf("in_slice_length: %d\nout_slice_length: %d\n", in_slice_length, *out_slice_length);	
+	avc_add_emulation_bytes(out_slice_without_emulation_bytes, *out_slice, *out_slice_length);
+	free(in_slice_without_emulation_bytes);
+	free(out_slice_without_emulation_bytes);
 	//printf("output buffer size: %d\n", *out_slice_length);
 
 } 
@@ -231,6 +310,7 @@ void parse_and_print_PPS(char *buffer, u32 nal_length, HEVCState* hevc, int *til
 	printf("num_tile_rows:\t%d\n",(*hevc).pps[i].num_tile_rows);
 	printf("num_profile_tier_level:\t%d\n",(*hevc).vps[i].num_profile_tier_level);
 	printf("height:\t%d\n",(*hevc).sps[i].height);
+	printf("slice_segment_header_extension_present_flag:\t%d\n",(*hevc).pps[i].slice_segment_header_extension_present_flag);
 	*tile_num = (*hevc).pps[i].num_tile_columns * (*hevc).pps[i].num_tile_rows;
 }
 
