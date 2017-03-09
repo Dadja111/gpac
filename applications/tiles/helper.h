@@ -42,8 +42,13 @@ void rewrite_SPS(char *in_SPS, u32 in_SPS_length, char **out_SPS, u32 *out_SPS_l
 void rewrite_PPS(char *in_PPS, u32 in_PPS_length, char **out_PPS, u32 *out_PPS_length);
 void rewrite_SPS_cb(u32 pic_width, u32 pic_height,char *in_SPS, u32 in_SPS_length, char **out_SPS, u32 *out_SPS_length, HEVCState *hevc);
 void rewrite_PPS_cb(u32 num_tile_columns_minus1,u32 num_tile_rows_minus1,u32 uniform_spacing_flag,u32 column_width_minus1[],u32 row_height_minus1[],char *in_PPS, u32 in_PPS_length, char **out_PPS, u32 *out_PPS_length);
+
+u32 hevc_get_tile_id(HEVCState *hevc, u32 *tile_x, u32 *tile_y, u32 *tile_width, u32 *tile_height);
+void slice_address_calculation(HEVCState *hevc, u32 *address, u32 tile_x, u32 tile_y);
 void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length, char **out_slice, u32 *out_slice_length, HEVCState* hevc);
 
+
+void parse_and_print_PPS(char *buffer, u32 nal_length, HEVCState* hevc, int *tile_num);
 
 #ifdef __cplusplus
 }

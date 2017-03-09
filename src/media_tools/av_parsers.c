@@ -2126,6 +2126,7 @@ static void avc_parse_hrd_parameters(GF_BitStream *bs, AVC_HRD *hrd)
 }
 
 /*returns the nal_size without emulation prevention bytes*/
+GF_EXPORT
 static u32 avc_emulation_bytes_add_count(char *buffer, u32 nal_size)
 {
 	u32 i = 0, emulation_bytes_count = 0;
@@ -2156,6 +2157,7 @@ static u32 avc_emulation_bytes_add_count(char *buffer, u32 nal_size)
 	return emulation_bytes_count;
 }
 
+GF_EXPORT
 static u32 avc_add_emulation_bytes(const char *buffer_src, char *buffer_dst, u32 nal_size)
 {
 
@@ -2228,6 +2230,7 @@ static u32 avc_emulation_bytes_remove_count(unsigned char *buffer, u32 nal_size)
 #endif /*GPAC_UNUSED_FUNC*/
 
 /*nal_size is updated to allow better error detection*/
+GF_EXPORT
 static u32 avc_remove_emulation_bytes(const char *buffer_src, char *buffer_dst, u32 nal_size)
 {
 	u32 i = 0, emulation_bytes_count = 0;
@@ -3523,7 +3526,8 @@ static Bool parse_short_term_ref_pic_set(GF_BitStream *bs, HEVC_SPS *sps, u32 id
 	return 1;
 }
 
-#define PARSE_FULL_HEADER	0
+#define PARSE_FULL_HEADER	1
+GF_EXPORT
 s32 hevc_parse_slice_segment(GF_BitStream *bs, HEVCState *hevc, HEVCSliceInfo *si)
 {
 #if PARSE_FULL_HEADER
@@ -3742,6 +3746,12 @@ s32 hevc_parse_slice_segment(GF_BitStream *bs, HEVCState *hevc, HEVCSliceInfo *s
 			}
 		}
 	}
+        if(pps->slice_segment_header_extension_present_flag)
+        {
+            u32 slice_segment_header_extension_length = bs_get_ue(bs);
+            for(i = 0; i < slice_segment_header_extension_length; i++)
+                gf_bs_read_int(bs,8);
+        }
 #endif //PARSE_FULL_HEADER
 	return 0;
 }

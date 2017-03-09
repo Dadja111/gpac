@@ -41,16 +41,17 @@ endif
 
 #common objs - insert after ../static if any to overwrite list of objects
 OBJS= main.o
+OBJS+= helper.o
 
 SRCS := $(OBJS:.o=.c) 
 
 all: $(PROG)
 
 $(PROG): $(OBJS)
-	$(CC) -o ../../bin/gcc/$@ $(OBJS) $(LINKFLAGS) $(LDFLAGS)
+	$(CC) -o ../../../project/$@ $(OBJS) $(LINKFLAGS) $(LDFLAGS)
 
 clean: 
-	rm -f $(OBJS) ../../bin/gcc/$(PROG)
+	rm -f $(OBJS) ../../../project/$(PROG)
 
 dep: depend
 

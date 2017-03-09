@@ -448,6 +448,7 @@ s32 gf_media_hevc_read_vps(char *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_read_sps(char *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_read_pps(char *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_parse_nalu(GF_BitStream *bs, HEVCState *hevc, u8 *nal_unit_type, u8 *temporal_id, u8 *layer_id);
+s32 hevc_parse_slice_segment(GF_BitStream *bs, HEVCState *hevc, HEVCSliceInfo *si);
 Bool gf_media_hevc_slice_is_intra(HEVCState *hevc);
 Bool gf_media_hevc_slice_is_IDR(HEVCState *hevc);
 //parses VPS and rewrites data buffer after removing VPS extension
