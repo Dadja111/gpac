@@ -27,28 +27,20 @@ u32 parse_print_VPS(char *buffer, u32 bz, HEVCState* hevc);
 u32 parse_print_SPS(char *buffer, u32 bz, HEVCState* hevc);
 u32 parse_print_PPS(char *buffer, u32 bz, HEVCState* hevc);
 
-u64 size_of_file(FILE *file);
-    
-
 void bs_set_ue(GF_BitStream *bs,u32 num);
 void bs_set_se(GF_BitStream *bs,s32 num);
 
-u32 new_address(int x,int y,int num_CTU_height[],int num_CTU_width[],int num_CTU_width_tot);
-void get_2D_cordinates_of_slices(u32 *x, u32 *y, HEVCState *hevc);
-void get_size_of_slice(u32 *w, u32 *h, HEVCState *hevc);
-
-//void rewrite_VPS(char *in_VPS, u32 in_VPS_length, char **out_VPS, u32 *out_VPS_length, HEVCState* hevc);
-void rewrite_SPS(char *in_SPS, u32 in_SPS_length, char **out_SPS, u32 *out_SPS_length, HEVCState *hevc);
-void rewrite_PPS(char *in_PPS, u32 in_PPS_length, char **out_PPS, u32 *out_PPS_length);
-void rewrite_SPS_cb(u32 pic_width, u32 pic_height,char *in_SPS, u32 in_SPS_length, char **out_SPS, u32 *out_SPS_length, HEVCState *hevc);
-void rewrite_PPS_cb(u32 num_tile_columns_minus1,u32 num_tile_rows_minus1,u32 uniform_spacing_flag,u32 column_width_minus1[],u32 row_height_minus1[],char *in_PPS, u32 in_PPS_length, char **out_PPS, u32 *out_PPS_length);
-
+u32 new_address(int x,int y,u32 num_CTU_height[],u32 num_CTU_width[],int num_CTU_width_tot, u32 sliceAdresse);
 u32 hevc_get_tile_id(HEVCState *hevc, u32 *tile_x, u32 *tile_y, u32 *tile_width, u32 *tile_height);
 void slice_address_calculation(HEVCState *hevc, u32 *address, u32 tile_x, u32 tile_y);
+u32 get_newSliceAddress_and_tilesCordinates(u32 *x, u32 *y, HEVCState *hevc);
+void get_size_of_tile(HEVCState hevc, u32 index_row, u32 index_col, u32 pps_id, u32 *width, u32 *height);
+void write_profile_tier_level(GF_BitStream *bs_in, GF_BitStream *bs_out , Bool ProfilePresentFlag, u8 MaxNumSubLayersMinus1);
+
+//void rewrite_VPS(char *in_VPS, u32 in_VPS_length, char **out_VPS, u32 *out_VPS_length, HEVCState* hevc);
+void rewrite_SPS(char *in_SPS, u32 in_SPS_length, u32 width, u32 height, HEVCState *hevc, char **out_SPS, u32 *out_SPS_length);
+void rewrite_PPS(Bool extract, char *in_PPS, u32 in_PPS_length, char **out_PPS, u32 *out_PPS_length, u32 num_tile_columns_minus1, u32 num_tile_rows_minus1, u32 uniform_spacing_flag, u32 column_width_minus1[], u32 row_height_minus1[]);
 void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length, char **out_slice, u32 *out_slice_length, HEVCState* hevc);
-
-
-void parse_and_print_PPS(char *buffer, u32 nal_length, HEVCState* hevc, int *tile_num);
 
 #ifdef __cplusplus
 }
