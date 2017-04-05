@@ -674,6 +674,33 @@ void combine_tiles(int argc, char *argv[])
     }
     max_x++;
     max_y++;
+    
+    //////////////////////reorder input video//////
+    FILE* temp;
+    int x_temp, y_temp, n=0;
+    for(i=0;i<max_x;i++)
+    {
+        for(j=0;j<max_y;j++)
+        {
+            for(k = n; k < num_video; k++)
+            {
+                if(position[k][0] == i && position[k][1] == j)
+                {
+                    temp = video[n];
+                    x_temp = position[n][0];
+                    y_temp = position[n][1];
+                    video[n] = video[k];
+                    position[n][0] = position[k][0];
+                    position[n][1] = position[k][1];
+                    video[k] = temp;
+                    position[k][0] = x_temp;
+                    position[k][1] = y_temp;
+                    n++;
+                    break;
+                }
+            }
+        }
+    }
     printf("Number of videos :%d\n",num_video);
     file_output = fopen(argv[argc-1], "wb");
   
@@ -849,14 +876,18 @@ void combine_tiles(int argc, char *argv[])
  
 ////////////////////////////////////////////////////////////////////////////////////////combination//////////////////////////////////
     printf("\nStart combinaison ...\n");
-    u32 uniform_spacing_flag=0,address=0;
-    for(k=0;k<num_video;k++)
-    {
-        if (bs[k] != NULL)
-        { 
-            HEVCState hevc;									
-
-            while(gf_bs_get_size(bs[k])!= gf_bs_get_position(bs[k]))  
+    u32 uniform_spacing_flag=1,address=0;
+    HEVCState hevc[num_video];
+    Bool cont = 0;
+    
+    //gf_bs_get_size(bs[k])!= gf_bs_get_position(bs[k])
+    printf("%lu\n", gf_bs_get_position(bs_swap));
+    do{ 
+        cont = 0;
+        for(k=0;k<num_video;k++)
+        {
+            printf("%lu in\n", gf_bs_get_position(bs[k]));
+            if (bs[k] != NULL && (gf_bs_get_size(bs[k])!= gf_bs_get_position(bs[k])))
             { 
                 nal_length = gf_media_nalu_next_start_code_bs(bs[k]);
                 gf_bs_skip_bytes(bs[k], nal_length);
@@ -865,7 +896,6 @@ void combine_tiles(int argc, char *argv[])
                 {
                     is_nal = 1;
                     nal_start_code_length = 24;
-                    gf_bs_write_int(bs_swap, 0x000001, 24);
                 }
                 else
                 {
@@ -873,10 +903,9 @@ void combine_tiles(int argc, char *argv[])
                     {
                         is_nal = 1;
                         nal_start_code_length = 32;
-                        gf_bs_write_int(bs_swap, 0x00000001, 32);
                     }
                     else
-     			is_nal = 0;	
+                        is_nal = 0;	
                 }
                 if(is_nal)
                 {
@@ -886,38 +915,45 @@ void combine_tiles(int argc, char *argv[])
                     buffer = malloc(sizeof(char)*nal_length);
 
                     gf_bs_read_data(bs[k],buffer,nal_length);
-                    bs_tmp[k] = gf_bs_new(buffer, nal_length+1, GF_BITSTREAM_READ);
-                    gf_media_hevc_parse_nalu(bs_tmp[k], &hevc, &nal_unit_type, &temporal_id, &layer_id);
-
+                    bs_tmp[k] = gf_bs_new(buffer, nal_length, GF_BITSTREAM_READ);
+                    gf_media_hevc_parse_nalu(bs_tmp[k], &hevc[k], &nal_unit_type, &temporal_id, &layer_id);
+                    printf("%lu o\n", gf_bs_get_position(bs_swap));
                     switch(nal_unit_type)
                     {
                         case 32:
                             printf("===VPS #===\n");
+                            gf_media_hevc_read_vps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
-                                gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
+                                printf("%lu kv\n", gf_bs_get_position(bs_swap));
+                                printf("sc %d \tlen %d start\n", nal_start_code, nal_start_code_length);
+                                gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer, nal_length);//copy VPS
                             }
                             break;
                         case 33:
                             printf("===SPS #===\n");
+                            gf_media_hevc_read_sps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
-                                rewrite_SPS(buffer, nal_length, pic_width,pic_height, &hevc, &buffer_swap, &nal_length_swap);
-                                gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
+                                printf("%lu ks\n", gf_bs_get_position(bs_swap));
+                                rewrite_SPS(buffer, nal_length, pic_width,pic_height, &hevc[k], &buffer_swap, &nal_length_swap);
+                                gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
-                                parse_print_SPS(buffer_swap, nal_length_swap, &hevc);
+                                //gf_bs_write_data(bs_swap, buffer, nal_length);
                                 free(buffer_swap);
                             }
                             break;                
                         case 34:
                             printf("===PPS #===\n"); 
+                            gf_media_hevc_read_pps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
+                                printf("%lu kp\n", gf_bs_get_position(bs_swap));
                                 rewrite_PPS(0, buffer, nal_length , &buffer_swap, &nal_length_swap, num_tile_columns_minus1,num_tile_rows_minus1,uniform_spacing_flag,num_CTU_width,num_CTU_height);///problems minus1!!!!!
-                                gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
+                                gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
-                                //parse_print_SPS(buffer_swap, nal_length_swap, &hevc);
+                                //gf_bs_write_data(bs_swap, buffer, nal_length);
                                 free(buffer_swap);
                             }
                             break;
@@ -925,24 +961,33 @@ void combine_tiles(int argc, char *argv[])
                             if(nal_unit_type <= 21)  //Slice
                             { 
                                 printf("===slice#===\n"); 
-                                address=new_address(position[k][0],position[k][1],num_CTU_width,num_CTU_height,num_CTU_width_tot, hevc.s_info.slice_segment_address);
-                                rewrite_slice_address(address, buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc);
-                                gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
+                                address=new_address(position[k][0],position[k][1],num_CTU_height,num_CTU_width,num_CTU_width_tot, hevc[k].s_info.slice_segment_address);
+                                printf("===ad   dr %u#===\n",address); 
+                                rewrite_slice_address(address, buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc[k]);
+                                gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
+                                //gf_bs_write_data(bs_swap, buffer, nal_length);
                                 free(buffer_swap);  
                             }
                             else
                             {
-                                gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
-                                gf_bs_write_data(bs_swap, buffer, nal_length);
+                                if(k == 0)
+                                {
+                                    gf_bs_write_int(bs_swap, 1, nal_start_code_length);
+                                    gf_bs_write_data(bs_swap, buffer, nal_length);
+                                }
                             }
                             break;
-                    } 
+                    }
+                    free(buffer);
+                    nal_length = 0;
                 }
-            } 
-			 
+            }
+            if(gf_bs_get_size(bs[k])!= gf_bs_get_position(bs[k]))
+                cont = 1;
         }
-    }
+        
+    }while(cont);
 
     fclose(file_output);
 }
