@@ -57,7 +57,7 @@ void extract_tiles (int argc, char **argv)
                 u32 buffer_temp_length=0, buffer_length=0, VPS_length=0, SPS_length=0, PPS_length=0; 
                 u32 nal_start_code;
                 Bool is_nal;
-                u32 width, height, pps_id=-1, newAddress;
+                u32 *width, *height, pps_id=-1, sps_id=-1, newAddress;
 		HEVCState hevc;
 		u8 nal_unit_type, temporal_id, layer_id;
                 Bool VPS_state=0, SPS_state=0;
@@ -108,7 +108,7 @@ void extract_tiles (int argc, char **argv)
                             case 33:
                                 SPS_buffer = buffer;
                                 SPS_length = buffer_length;
-                                gf_media_hevc_read_sps(SPS_buffer,SPS_length, &hevc);
+                                sps_id = gf_media_hevc_read_sps(SPS_buffer,SPS_length, &hevc);
                                 SPS_state = 1;
                                 buffer = NULL;
                                 break;
@@ -116,6 +116,8 @@ void extract_tiles (int argc, char **argv)
                                 PPS_buffer = buffer;
                                 PPS_length = buffer_length;
                                 pps_id = gf_media_hevc_read_pps(PPS_buffer,PPS_length, &hevc);
+                                height = malloc(sizeof(u32)*hevc.pps[pps_id].num_tile_rows);
+                                width = malloc(sizeof(u32)*hevc.pps[pps_id].num_tile_columns);
                                 for(i=0;i< hevc.pps[pps_id].num_tile_rows;i++)
                                 {
                                     for(j=0; j< hevc.pps[pps_id].num_tile_columns;j++)
@@ -152,8 +154,8 @@ void extract_tiles (int argc, char **argv)
                                             }
                                             //rewrite and copy the SPS
                                             gf_bs_write_int(bs_tiles[i][j], 1, 32);
-                                            get_size_of_tile(hevc, i, j, pps_id, &width, &height);
-                                            rewrite_SPS(SPS_buffer, SPS_length, width, height, &hevc, &buffer_temp, &buffer_temp_length);
+                                            get_size_of_tile(hevc, i, j, pps_id, &width[j], &height[i]);
+                                            rewrite_SPS(SPS_buffer, SPS_length, width[j], height[i], &hevc, &buffer_temp, &buffer_temp_length);
                                             gf_bs_write_data(bs_tiles[i][j],buffer_temp, buffer_temp_length);
                                             free(buffer_temp);
                                             buffer_temp = NULL;
@@ -173,8 +175,8 @@ void extract_tiles (int argc, char **argv)
                                                 gf_bs_write_data(bs_tiles[i][j],VPS_buffer, VPS_length);
                                                 gf_bs_write_int(bs_tiles[i][j], 1, 32);
                                                 //rewrite and copy the SPS
-                                                get_size_of_tile(hevc, i, j, pps_id, &width, &height);
-                                                rewrite_SPS(SPS_buffer, SPS_length, width, height, &hevc, &buffer_temp, &buffer_temp_length);
+                                                get_size_of_tile(hevc, i, j, pps_id, &width[j], &height[i]);
+                                                rewrite_SPS(SPS_buffer, SPS_length, width[j], height[i], &hevc, &buffer_temp, &buffer_temp_length);
                                                 gf_bs_write_data(bs_tiles[i][j],buffer_temp, buffer_temp_length);
                                                 free(buffer_temp);
                                                 buffer_temp = NULL;
@@ -217,7 +219,7 @@ void extract_tiles (int argc, char **argv)
                                     {
                                         //rewrite and copy the Slice
                                         gf_bs_write_int(bs_tiles[i][j], 1, 32);
-                                        rewrite_slice_address(newAddress, buffer, buffer_length, &buffer_temp, &buffer_temp_length, &hevc);
+                                        rewrite_slice_address(newAddress, buffer, buffer_length, &buffer_temp, &buffer_temp_length, &hevc, get_nbCTU(width[j],height[i],&hevc.sps[sps_id]));
                                         gf_bs_write_data(bs_tiles[i][j], buffer_temp, buffer_temp_length);
                                         //gf_bs_write_data(bs_tiles[i][j],buffer, buffer_length);
                                         free(buffer_temp);
@@ -324,7 +326,7 @@ void swap_tiles (int argc, char **argv)
                 int tile_info_check = 0;
                 int tiles_width[100] = {0};
                 int tiles_height[100] = {0};
-                u32 tile_x, tile_y, tile_width, tile_height, pps_id;
+                u32 tile_x, tile_y, tile_width, tile_height, pps_id, sps_id;
 				
                 while(gf_bs_get_size(bs) != gf_bs_get_position(bs) && tile_info_check == 0)
                 {
@@ -374,7 +376,7 @@ void swap_tiles (int argc, char **argv)
                                 break;
                             case 33:
                                 sps_num++;
-                                gf_media_hevc_read_sps(buffer, nal_length, &hevc);
+                                sps_id = gf_media_hevc_read_sps(buffer, nal_length, &hevc);
                                 gf_bs_write_int(bs_swap, nal_start_code, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer, nal_length);
                                 if (pos_rec < gf_bs_get_position(bs))
@@ -421,7 +423,7 @@ void swap_tiles (int argc, char **argv)
                                         {
                                             buffer_reorder_sc[tile_2][0] = nal_start_code;
                                             buffer_reorder_sc[tile_2][1] = nal_start_code_length;
-                                            rewrite_slice_address(slice_address[tile_2], buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc);
+                                            rewrite_slice_address(slice_address[tile_2], buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc,get_nbCTU(hevc.sps[sps_id].width,hevc.sps[sps_id].height,&hevc.sps[sps_id]));
                                             
                                             buffer_reorder_length[tile_2] = sizeof(char)*nal_length_swap;										
                                             buffer_reorder[tile_2] = malloc(sizeof(char)*nal_length_swap);										
@@ -432,7 +434,7 @@ void swap_tiles (int argc, char **argv)
                                         {			
                                             buffer_reorder_sc[tile_1][0] = nal_start_code;
                                             buffer_reorder_sc[tile_1][1] = nal_start_code_length;		
-                                            rewrite_slice_address(slice_address[tile_1], buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc);
+                                            rewrite_slice_address(slice_address[tile_1], buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc, get_nbCTU(hevc.sps[sps_id].width,hevc.sps[sps_id].height,&hevc.sps[sps_id]));
 
                                             buffer_reorder_length[tile_1] = sizeof(char)*nal_length_swap;										
                                             buffer_reorder[tile_1] = malloc(sizeof(char)*nal_length_swap);										
@@ -876,7 +878,7 @@ void combine_tiles(int argc, char *argv[])
  
 ////////////////////////////////////////////////////////////////////////////////////////combination//////////////////////////////////
     printf("\nStart combinaison ...\n");
-    u32 uniform_spacing_flag=1,address=0;
+    u32 uniform_spacing_flag=1,address=0, sps_id;
     HEVCState hevc[num_video];
     Bool cont = 0;
     
@@ -925,18 +927,15 @@ void combine_tiles(int argc, char *argv[])
                             gf_media_hevc_read_vps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
-                                printf("%lu kv\n", gf_bs_get_position(bs_swap));
-                                printf("sc %d \tlen %d start\n", nal_start_code, nal_start_code_length);
                                 gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer, nal_length);//copy VPS
                             }
                             break;
                         case 33:
                             printf("===SPS #===\n");
-                            gf_media_hevc_read_sps(buffer, nal_length, &hevc[k]);
+                            sps_id = gf_media_hevc_read_sps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
-                                printf("%lu ks\n", gf_bs_get_position(bs_swap));
                                 rewrite_SPS(buffer, nal_length, pic_width,pic_height, &hevc[k], &buffer_swap, &nal_length_swap);
                                 gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
@@ -949,7 +948,6 @@ void combine_tiles(int argc, char *argv[])
                             gf_media_hevc_read_pps(buffer, nal_length, &hevc[k]);
                             if(k==0)
                             {
-                                printf("%lu kp\n", gf_bs_get_position(bs_swap));
                                 rewrite_PPS(0, buffer, nal_length , &buffer_swap, &nal_length_swap, num_tile_columns_minus1,num_tile_rows_minus1,uniform_spacing_flag,num_CTU_width,num_CTU_height);///problems minus1!!!!!
                                 gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
@@ -963,10 +961,9 @@ void combine_tiles(int argc, char *argv[])
                                 printf("===slice#===\n"); 
                                 address=new_address(position[k][0],position[k][1],num_CTU_height,num_CTU_width,num_CTU_width_tot, hevc[k].s_info.slice_segment_address);
                                 printf("===ad   dr %u#===\n",address); 
-                                rewrite_slice_address(address, buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc[k]);
+                                rewrite_slice_address(address, buffer, nal_length, &buffer_swap, &nal_length_swap, &hevc[k], get_nbCTU(pic_width,pic_height,&hevc[k].sps[sps_id]));
                                 gf_bs_write_int(bs_swap, 1, nal_start_code_length);
                                 gf_bs_write_data(bs_swap, buffer_swap, nal_length_swap);
-                                //gf_bs_write_data(bs_swap, buffer, nal_length);
                                 free(buffer_swap);  
                             }
                             else
@@ -1039,7 +1036,9 @@ int main (int argc, char **argv)
     //test();
     if(argc >= 2)
     {
-        if(0==strcmp(argv[1],"--extract") || 0==strcmp(argv[1],"-x"))
+        if(0==strcmp(argv[1],"--help") || 0==strcmp(argv[1],"-h"))
+            help();
+        else if(0==strcmp(argv[1],"--extract") || 0==strcmp(argv[1],"-x"))
         {
             struct stat st = {0};
             if (stat(argv[3], &st) == -1)
@@ -1055,10 +1054,8 @@ int main (int argc, char **argv)
         else if(0==strcmp(argv[1],"--info") || 0==strcmp(argv[1],"-i"))
             bs_info(argc, argv);
         else;
-            help();
     }
     else;
-        help();
     
     return 0;
 }

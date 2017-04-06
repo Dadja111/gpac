@@ -316,6 +316,10 @@ void get_size_of_tile(HEVCState hevc, u32 index_row, u32 index_col, u32 pps_id, 
         } 
         *width = *width * max_CU_width;
         *height = *height * max_CU_height;
+        if( *width + tbY*max_CU_width > hevc.sps[sps_id].width)
+            *width = hevc.sps[sps_id].width - tbY*max_CU_width;
+        if( *height + tbX*max_CU_height > hevc.sps[sps_id].height)
+            *height = hevc.sps[sps_id].height - tbX*max_CU_height;
     }
 }
 
@@ -562,8 +566,17 @@ void rewrite_PPS(Bool extract, char *in_PPS, u32 in_PPS_length, char **out_PPS, 
         gf_free(buffer);
 }
 
+u32 get_nbCTU(u32 final_width,u32 final_height, HEVC_SPS *sps)
+{
+    u32 nb_CTUs = ((final_width + sps->max_CU_width -1) / sps->max_CU_width) * ((final_height + sps->max_CU_height-1) / sps->max_CU_height);
+    u32 nb_bits_per_adress_dst = 0;
+    while (nb_CTUs > (u32) (1 << nb_bits_per_adress_dst)) {
+        nb_bits_per_adress_dst++;
+    }
+    return nb_bits_per_adress_dst;
+}
 
-void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length, char **out_slice, u32 *out_slice_length, HEVCState* hevc) 
+void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length, char **out_slice, u32 *out_slice_length, HEVCState* hevc, u32 bitsSliceSegmentAddress) 
 {
     u64 length_no_use = 0;
     u32 first_slice_segment_in_pic_flag, nal_unit_type;
@@ -619,7 +632,7 @@ void rewrite_slice_address(u32 new_address, char *in_slice, u32 in_slice_length,
     {	
         if(pps->dependent_slice_segments_enabled_flag)
             gf_bs_write_int(bs_out, dependent_slice_segment_flag, 1);
-        gf_bs_write_int(bs_out, new_address, sps->bitsSliceSegmentAddress);	    //slice_segment_address WRITE
+        gf_bs_write_int(bs_out, new_address, bitsSliceSegmentAddress);	    //slice_segment_address WRITE
     }
     
     while (header_end != (gf_bs_get_position(bs_in)-1)*8+gf_bs_get_bit_position(bs_in)) //Copy till the end of the header
